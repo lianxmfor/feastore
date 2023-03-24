@@ -1,3 +1,4 @@
+pub mod sqlite;
 pub mod types;
 
 use async_trait::async_trait;
