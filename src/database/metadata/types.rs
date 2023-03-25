@@ -1,11 +1,12 @@
 use chrono::DateTime;
 use chrono::Utc;
 
+#[derive(sqlx::FromRow)]
 pub struct Entity {
-    id: i64,
-    name: String,
-    description: String,
+    pub id: i64,
+    pub name: String,
+    pub description: String,
 
-    create_time: DateTime<Utc>,
-    modify_time: DateTime<Utc>,
+    pub create_time: DateTime<Utc>,
+    pub modify_time: DateTime<Utc>,
 }
