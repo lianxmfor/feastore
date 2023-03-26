@@ -62,7 +62,7 @@ impl DBStore for DB {
     }
 
     async fn list_entity(&self, opt: ListEntityOpt) -> Result<Vec<Entity>> {
-        let mut query_str = "SELEcT * FROM entity".to_owned();
+        let mut query_str = "SELECT * FROM entity".to_owned();
 
         let query = match opt {
             ListEntityOpt::All => {
@@ -97,7 +97,7 @@ impl DBStore for DB {
 
 #[cfg(test)]
 mod tests {
-    use sqlx::{SqlitePool, pool};
+    use sqlx::SqlitePool;
 
     use crate::database::error::Error;
 
