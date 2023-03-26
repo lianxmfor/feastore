@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use sqlx::FromRow;
 
 use crate::database::error::Error;
-use crate::database::metadata::{DBStore, Entity, GetEntityOpt};
 use crate::database::Result;
+use crate::database::metadata::types::ListEntityOpt;
+use crate::database::metadata::{DBStore, Entity, GetEntityOpt};
 
 use super::DB;
 
@@ -60,13 +61,26 @@ impl DBStore for DB {
         Ok(query.fetch_optional(&self.pool).await?)
     }
 
-    async fn list_entity(&self, ids: Vec<i64>) -> Result<Vec<Entity>> {
-        let query_str = format!("SELECT * FROM entity WHERE id in (?{})", ", ?".repeat(ids.len()-1));
-        let mut query = sqlx::query(&query_str);
+    async fn list_entity(&self, opt: ListEntityOpt) -> Result<Vec<Entity>> {
+        let mut query_str = "SELEcT * FROM entity".to_owned();
 
-        for id in ids {
-            query = query.bind(id);
-        }
+        let query = match opt {
+            ListEntityOpt::All => {
+                sqlx::query(&query_str) 
+            },
+            ListEntityOpt::Ids(ids) => {
+                if ids.len() == 0 {
+                    return Ok(Vec::new())
+                }
+
+                query_str = format!("{query_str} WHERE id in (?{})", ", ?".repeat(ids.len()-1));
+                let mut query = sqlx::query(&query_str);
+                for id in ids {
+                    query = query.bind(id);
+                }
+                query
+            }
+        };
 
         let res = query
                 .fetch_all(&self.pool)
@@ -77,10 +91,7 @@ impl DBStore for DB {
                 })
                 .collect::<std::result::Result<Vec<Entity>, sqlx::Error>>();
 
-        match res {
-            Ok(res) => Ok(res),
-            Err(e) => Err(e.into()),
-        }
+        res.or_else(|e| Err(e.into()))
     }
 }
 
@@ -158,23 +169,26 @@ mod tests {
     fn list_entity(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        let entitys = db.list_entity(vec![1,2,3]).await.unwrap();
+        let entitys = db.list_entity(ListEntityOpt::All).await.unwrap();
         assert_eq!(entitys.len(), 0);
 
         assert!(db.create_entity("name", "description").await.is_ok());
-        let entitys = db.list_entity(vec![1,2,3]).await.unwrap();
+        let entitys = db.list_entity(ListEntityOpt::All).await.unwrap();
         assert_eq!(entitys.len(), 1);
 
         assert!(db.create_entity("name2", "description").await.is_ok());
-        let entitys = db.list_entity(vec![1,2,3]).await.unwrap();
+        let entitys = db.list_entity(ListEntityOpt::All).await.unwrap();
         assert_eq!(entitys.len(), 2);
 
-        assert!(db.create_entity("name3", "description").await.is_ok());
-        let entitys = db.list_entity(vec![1,2,3]).await.unwrap();
+        assert!(db.create_entity("name4", "description").await.is_ok());
+        let entitys = db.list_entity(ListEntityOpt::Ids(vec![1, 2])).await.unwrap();
+        assert_eq!(entitys.len(), 2);
+
+        let entitys = db.list_entity(ListEntityOpt::Ids(vec![1, 2, 3, 4])).await.unwrap();
         assert_eq!(entitys.len(), 3);
 
-        assert!(db.create_entity("name4", "description").await.is_ok());
-        let entitys = db.list_entity(vec![1,2,3]).await.unwrap();
-        assert_eq!(entitys.len(), 3);
+        let entitys = db.list_entity(ListEntityOpt::Ids(Vec::new())).await.unwrap();
+        assert_eq!(entitys.len(), 0);
+
     }
 }
