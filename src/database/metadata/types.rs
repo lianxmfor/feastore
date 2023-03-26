@@ -15,3 +15,10 @@ pub enum GetEntityOpt {
     Id(i64),
     Name(String),
 }
+
+pub enum ListEntityOpt {
+    /// return all rows from DB.
+    All,
+    /// return rows which id in the id list from DB.
+    Ids(Vec<i64>),
+}
