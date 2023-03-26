@@ -10,3 +10,8 @@ pub struct Entity {
     pub create_time: DateTime<Utc>,
     pub modify_time: DateTime<Utc>,
 }
+
+pub enum GetEntityOpt {
+    Id(i64),
+    Name(String),
+}
