@@ -2,9 +2,8 @@ use async_trait::async_trait;
 use sqlx::FromRow;
 
 use crate::database::error::Error;
-use crate::database::metadata::{DBStore, Entity};
+use crate::database::metadata::{DBStore, Entity, GetEntityOpt};
 use crate::database::Result;
-
 
 use super::DB;
 
@@ -46,12 +45,19 @@ impl DBStore for DB {
         }
     }
 
-    async fn get_entity(&self, name: &str) -> Result<Option<Entity>> {
-        let res: Option<Entity> = sqlx::query_as("SELECT * FROM entity WHERE name = ?")
-                .bind(name)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(res) 
+    async fn get_entity(&self, opt: GetEntityOpt) -> Result<Option<Entity>> {
+        let query = match opt {
+            GetEntityOpt::Id(id) => {
+                sqlx::query_as("SELECT * FROM entity WHERE id = ?")
+                    .bind(id)
+            },
+            GetEntityOpt::Name(name) => {
+                sqlx::query_as("SELECT * FROM entity WHERE name = ?")
+                    .bind(name)
+            }
+        };
+
+        Ok(query.fetch_optional(&self.pool).await?)
     }
 
     async fn list_entity(&self, ids: Vec<i64>) -> Result<Vec<Entity>> {
@@ -112,12 +118,20 @@ mod tests {
 
         let id = db.create_entity("name", "description").await.unwrap();
 
-        let entity = db.get_entity("name").await.unwrap().unwrap();
+        let entity = db.get_entity(GetEntityOpt::Id(id)).await.unwrap().unwrap();
         assert_eq!(entity.id, id);
         assert_eq!(entity.name, "name");
         assert_eq!(entity.description, "description");
 
-        let res = db.get_entity("no_exist").await.unwrap();
+        let entity = db.get_entity(GetEntityOpt::Name("name".to_owned())).await.unwrap().unwrap();
+        assert_eq!(entity.id, id);
+        assert_eq!(entity.name, "name");
+        assert_eq!(entity.description, "description");
+
+        let res = db.get_entity(GetEntityOpt::Name("not_exist".to_owned())).await.unwrap();
+        assert!(res.is_none());
+
+        let res = db.get_entity(GetEntityOpt::Id(id+1)).await.unwrap();
         assert!(res.is_none());
     }
 
@@ -129,7 +143,7 @@ mod tests {
 
         assert!(db.update_entity(id, "new_description").await.is_ok());
 
-        let entity = db.get_entity("name").await.unwrap().unwrap();
+        let entity = db.get_entity(GetEntityOpt::Id(id)).await.unwrap().unwrap();
         assert_eq!(entity.id, id);
         assert_eq!(entity.name, "name");
         assert_eq!(entity.description, "new_description");
