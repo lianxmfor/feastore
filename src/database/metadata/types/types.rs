@@ -35,8 +35,8 @@ pub struct Group {
     pub id: i64,
     pub name: String,
     pub category: Category,
-    pub description: String,
 
+    pub description: String,
     pub create_time: DateTime<Utc>,
     pub modify_time: DateTime<Utc>,
 
