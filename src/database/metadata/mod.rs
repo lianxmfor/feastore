@@ -3,14 +3,15 @@ pub mod types;
 
 use async_trait::async_trait;
 
+use crate::database::Result;
+use crate::feastore::opt::BackendOpt;
 use self::types::{
     CreateFeatureOpt, CreateGroupOpt, Entity, Feature, GetEntityOpt, GetFeatureOpt, GetGroupOpt,
     Group, ListEntityOpt, ListFeatureOpt, ListGroupOpt,
 };
-use crate::database::Result;
 
 #[async_trait]
-trait DBStore {
+pub trait DBStore {
     async fn create_entity(&self, name: &str, description: &str) -> Result<i64>;
     async fn update_entity(&self, id: i64, new_description: &str) -> Result<()>;
     async fn get_entity(&self, opt: GetEntityOpt) -> Result<Option<Entity>>;
@@ -26,3 +27,12 @@ trait DBStore {
     async fn get_feature(&self, opt: GetFeatureOpt) -> Result<Option<Feature>>;
     async fn list_feature(&self, opt: ListFeatureOpt) -> Result<Vec<Feature>>;
 }
+
+pub async fn open(opt: BackendOpt) -> impl DBStore {
+    match opt {
+        BackendOpt::SQLite(opt) => {
+            sqlite::DB::from(opt).await
+        }
+    }
+}
+

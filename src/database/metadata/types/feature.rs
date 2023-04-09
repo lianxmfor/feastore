@@ -1,7 +1,5 @@
 use chrono::{DateTime, Utc};
 
-use super::{FeatureValueType, Group};
-
 #[derive(sqlx::FromRow, Default, Clone)]
 pub struct Feature {
     pub id: i64,
@@ -33,6 +31,32 @@ impl std::convert::From<Feature> for CreateFeatureOpt {
     }
 }
 
+#[derive(sqlx::Type, Default, PartialEq, Debug, Clone)]
+pub enum FeatureValueType {
+    #[default]
+    StringType,
+    Int64,
+    Float64,
+    Bool,
+    Time,
+    Bytes,
+    Invalid,
+}
+
+impl std::convert::From<String> for FeatureValueType {
+    fn from(v: String) -> Self {
+        match v.as_str() {
+            "string" => FeatureValueType::StringType,
+            "int64" => FeatureValueType::Int64,
+            "float64" => FeatureValueType::Float64,
+            "bool" => FeatureValueType::Bool,
+            "time" => FeatureValueType::Time,
+            "bytes" => FeatureValueType::Bytes,
+            _ => FeatureValueType::Invalid,
+        }
+    }
+}
+
 pub enum GetFeatureOpt {
     Id(i64),
     Name(String),
@@ -44,3 +68,4 @@ pub enum ListFeatureOpt {
     /// return rows which id in the id list from DB.
     Ids(Vec<i64>),
 }
+
