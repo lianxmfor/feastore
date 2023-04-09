@@ -1,5 +1,7 @@
+pub mod schema;
+
 use async_trait::async_trait;
-use sqlx::FromRow;
+use sqlx::{FromRow, SqlitePool};
 
 use crate::database::error::Error;
 use crate::database::metadata::types::{
@@ -8,14 +10,7 @@ use crate::database::metadata::types::{
 };
 use crate::database::metadata::DBStore;
 use crate::database::Result;
-
-
-pub mod implements;
-pub mod schema;
-
-
-use sqlx::SqlitePool;
-
+use crate::database::SQLiteOpt;
 use schema::{META_TABLE_SCHEMAS, META_VIEW_SCHEMAS};
 
 pub struct DB {
@@ -23,12 +18,14 @@ pub struct DB {
 }
 
 impl DB {
-    pub async fn from(db_file: &str) -> DB {
-        let pool = SqlitePool::connect(format!("sqlite://{}", db_file).as_str())
+    pub async fn from(db_file: SQLiteOpt) -> DB {
+        let pool = SqlitePool::connect(format!("sqlite://{}", db_file.db_file).as_str())
             .await
             .unwrap();
 
-        DB { pool }
+        let db = DB { pool};
+        db.create_database().await;
+        db
     }
 
     fn from_pool(pool: SqlitePool) -> DB {
