@@ -3,6 +3,10 @@ name = "feastore"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "feacli"
+path = "src/feacli/main.rs"
+
 [dependencies]
 sqlx = { version = "0.6.2", features = [ "runtime-tokio-native-tls", "sqlite", "chrono" ] }
 tokio = { version = "1", features = ["full"] }
@@ -10,3 +14,5 @@ chrono = { version = "0.4" }
 async-trait = "0.1.67"
 phf = { version = "0.11.0", features = ["macros"] }
 thiserror = { version = "1.0.39" }
+clap = { version = "4.2.1", features = ["derive"] }
+

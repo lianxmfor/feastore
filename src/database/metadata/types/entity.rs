@@ -22,5 +22,3 @@ pub enum ListEntityOpt {
     /// return rows which id in the id list from DB.
     Ids(Vec<i64>),
 }
-
-

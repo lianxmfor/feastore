@@ -14,6 +14,6 @@ pub use entity::ListEntityOpt;
 
 pub use feature::CreateFeatureOpt;
 pub use feature::Feature;
+pub use feature::FeatureValueType;
 pub use feature::GetFeatureOpt;
 pub use feature::ListFeatureOpt;
-pub use feature::FeatureValueType;

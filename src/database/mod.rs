@@ -1,6 +1,6 @@
+pub mod config;
 pub mod error;
 pub mod metadata;
-pub mod config;
 
 pub use config::SQLiteOpt;
 

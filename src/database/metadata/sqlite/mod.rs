@@ -23,13 +23,9 @@ impl DB {
             .await
             .unwrap();
 
-        let db = DB { pool};
+        let db = DB { pool };
         db.create_database().await;
         db
-    }
-
-    fn from_pool(pool: SqlitePool) -> DB {
-        DB { pool }
     }
 
     async fn create_database(&self) {
@@ -59,10 +55,18 @@ impl DB {
             sqlx::query(&trigger).execute(&self.pool).await.unwrap();
         }
     }
+
+    fn from_pool(pool: SqlitePool) -> DB {
+        DB { pool }
+    }
 }
 
 #[async_trait]
 impl DBStore for DB {
+    async fn close(&self) {
+        self.pool.close().await;
+    }
+
     async fn create_entity(&self, name: &str, description: &str) -> Result<i64> {
         let res = sqlx::query("INSERT INTO entity (name, description) VALUES (?, ?)")
             .bind(name)
