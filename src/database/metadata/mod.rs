@@ -3,10 +3,6 @@ pub mod types;
 
 use async_trait::async_trait;
 
-use self::types::{
-    CreateFeatureOpt, CreateGroupOpt, Entity, Feature, GetEntityOpt, GetFeatureOpt, GetGroupOpt,
-    Group, ListEntityOpt, ListFeatureOpt, ListGroupOpt,
-};
 use crate::database::Result;
 use crate::feastore::opt::BackendOpt;
 
@@ -16,18 +12,18 @@ pub trait DBStore {
 
     async fn create_entity(&self, name: &str, description: &str) -> Result<i64>;
     async fn update_entity(&self, id: i64, new_description: &str) -> Result<()>;
-    async fn get_entity(&self, opt: GetEntityOpt) -> Result<Option<Entity>>;
-    async fn list_entity(&self, opt: ListEntityOpt) -> Result<Vec<Entity>>;
+    async fn get_entity(&self, opt: types::GetOpt) -> Result<Option<types::Entity>>;
+    async fn list_entity(&self, opt: types::ListOpt) -> Result<Vec<types::Entity>>;
 
-    async fn create_group(&self, group: CreateGroupOpt) -> Result<i64>;
+    async fn create_group(&self, group: types::CreateGroupOpt) -> Result<i64>;
     async fn update_group(&self, id: i64, new_description: &str) -> Result<()>;
-    async fn get_group(&self, opt: GetGroupOpt) -> Result<Option<Group>>;
-    async fn list_group(&self, opt: ListGroupOpt) -> Result<Vec<Group>>;
+    async fn get_group(&self, opt: types::GetOpt) -> Result<Option<types::Group>>;
+    async fn list_group(&self, opt: types::ListOpt) -> Result<Vec<types::Group>>;
 
-    async fn create_feature(&self, feature: CreateFeatureOpt) -> Result<i64>;
+    async fn create_feature(&self, feature: types::CreateFeatureOpt) -> Result<i64>;
     async fn update_feature(&self, id: i64, new_description: &str) -> Result<()>;
-    async fn get_feature(&self, opt: GetFeatureOpt) -> Result<Option<Feature>>;
-    async fn list_feature(&self, opt: ListFeatureOpt) -> Result<Vec<Feature>>;
+    async fn get_feature(&self, opt: types::GetOpt) -> Result<Option<types::Feature>>;
+    async fn list_feature(&self, opt: types::ListOpt) -> Result<Vec<types::Feature>>;
 }
 
 pub async fn open(opt: BackendOpt) -> impl DBStore {

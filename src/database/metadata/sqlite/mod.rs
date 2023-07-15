@@ -4,10 +4,7 @@ use async_trait::async_trait;
 use sqlx::{FromRow, SqlitePool};
 
 use crate::database::error::Error;
-use crate::database::metadata::types::{
-    CreateFeatureOpt, CreateGroupOpt, Entity, Feature, GetEntityOpt, GetFeatureOpt, GetGroupOpt,
-    Group, ListEntityOpt, ListFeatureOpt, ListGroupOpt,
-};
+use crate::database::metadata::types::{self, *};
 use crate::database::metadata::DBStore;
 use crate::database::Result;
 use crate::database::SQLiteOpt;
@@ -101,10 +98,10 @@ impl DBStore for DB {
         }
     }
 
-    async fn get_entity(&self, opt: GetEntityOpt) -> Result<Option<Entity>> {
+    async fn get_entity(&self, opt: types::GetOpt) -> Result<Option<types::Entity>> {
         let query = match opt {
-            GetEntityOpt::Id(id) => sqlx::query_as("SELECT * FROM entity WHERE id = ?").bind(id),
-            GetEntityOpt::Name(name) => {
+            types::GetOpt::ID(id) => sqlx::query_as("SELECT * FROM entity WHERE id = ?").bind(id),
+            types::GetOpt::Name(name) => {
                 sqlx::query_as("SELECT * FROM entity WHERE name = ?").bind(name)
             }
         };
@@ -112,12 +109,12 @@ impl DBStore for DB {
         Ok(query.fetch_optional(&self.pool).await?)
     }
 
-    async fn list_entity(&self, opt: ListEntityOpt) -> Result<Vec<Entity>> {
+    async fn list_entity(&self, opt: types::ListOpt) -> Result<Vec<types::Entity>> {
         let mut query_str = "SELECT * FROM entity".to_owned();
 
         let query = match opt {
-            ListEntityOpt::All => sqlx::query(&query_str),
-            ListEntityOpt::Ids(ids) => {
+            types::ListOpt::All => sqlx::query(&query_str),
+            types::ListOpt::IDs(ids) => {
                 if ids.len() == 0 {
                     return Ok(Vec::new());
                 }
@@ -135,13 +132,13 @@ impl DBStore for DB {
             .fetch_all(&self.pool)
             .await?
             .iter()
-            .map(|row| Entity::from_row(row))
-            .collect::<std::result::Result<Vec<Entity>, sqlx::Error>>();
+            .map(|row| types::Entity::from_row(row))
+            .collect::<std::result::Result<Vec<types::Entity>, sqlx::Error>>();
 
         res.or_else(|e| Err(e.into()))
     }
 
-    async fn create_group(&self, group: CreateGroupOpt) -> Result<i64> {
+    async fn create_group(&self, group: types::CreateGroupOpt) -> Result<i64> {
         let res = sqlx::query("INSERT INTO feature_group (name, category, description, entity_id) VALUES (?, ?, ?, ?)")
             .bind(&group.name)
             .bind(group.category)
@@ -180,12 +177,12 @@ impl DBStore for DB {
         }
     }
 
-    async fn get_group(&self, opt: GetGroupOpt) -> Result<Option<Group>> {
+    async fn get_group(&self, opt: types::GetOpt) -> Result<Option<types::Group>> {
         let query = match opt {
-            GetGroupOpt::Id(id) => {
+            types::GetOpt::ID(id) => {
                 sqlx::query_as("SELECT * FROM feature_group WHERE id = ?").bind(id)
             }
-            GetGroupOpt::Name(name) => {
+            types::GetOpt::Name(name) => {
                 sqlx::query_as("SELECT * FROM feature_group WHERE name = ?").bind(name)
             }
         };
@@ -193,12 +190,12 @@ impl DBStore for DB {
         Ok(query.fetch_optional(&self.pool).await?)
     }
 
-    async fn list_group(&self, opt: ListGroupOpt) -> Result<Vec<Group>> {
+    async fn list_group(&self, opt: types::ListOpt) -> Result<Vec<types::Group>> {
         let mut query_str = "SELECT * FROM feature_group".to_owned();
 
         let query = match opt {
-            ListGroupOpt::All => sqlx::query(&query_str),
-            ListGroupOpt::Ids(ids) => {
+            types::ListOpt::All => sqlx::query(&query_str),
+            types::ListOpt::IDs(ids) => {
                 if ids.len() == 0 {
                     return Ok(Vec::new());
                 }
@@ -216,13 +213,13 @@ impl DBStore for DB {
             .fetch_all(&self.pool)
             .await?
             .iter()
-            .map(|row| Group::from_row(row))
-            .collect::<std::result::Result<Vec<Group>, sqlx::Error>>();
+            .map(|row| types::Group::from_row(row))
+            .collect::<std::result::Result<Vec<types::Group>, sqlx::Error>>();
 
         res.or_else(|e| Err(e.into()))
     }
 
-    async fn create_feature(&self, opt: CreateFeatureOpt) -> Result<i64> {
+    async fn create_feature(&self, opt: types::CreateFeatureOpt) -> Result<i64> {
         let res = sqlx::query(
             "INSERT INTO feature (group_id, name, value_type, description) VALUES (?, ?, ?, ?)",
         )
@@ -263,10 +260,10 @@ impl DBStore for DB {
         }
     }
 
-    async fn get_feature(&self, opt: GetFeatureOpt) -> Result<Option<Feature>> {
+    async fn get_feature(&self, opt: types::GetOpt) -> Result<Option<Feature>> {
         let query = match opt {
-            GetFeatureOpt::Id(id) => sqlx::query_as("SELECT * FROM feature WHERE id = ?").bind(id),
-            GetFeatureOpt::Name(name) => {
+            types::GetOpt::ID(id) => sqlx::query_as("SELECT * FROM feature WHERE id = ?").bind(id),
+            types::GetOpt::Name(name) => {
                 sqlx::query_as("SELECT * FROM feature WHERE name = ?").bind(name)
             }
         };
@@ -274,12 +271,12 @@ impl DBStore for DB {
         Ok(query.fetch_optional(&self.pool).await?)
     }
 
-    async fn list_feature(&self, opt: ListFeatureOpt) -> Result<Vec<Feature>> {
+    async fn list_feature(&self, opt: ListOpt) -> Result<Vec<Feature>> {
         let mut query_str = "SELECT * FROM feature".to_owned();
 
         let query = match opt {
-            ListFeatureOpt::All => sqlx::query(&query_str),
-            ListFeatureOpt::Ids(ids) => {
+            ListOpt::All => sqlx::query(&query_str),
+            ListOpt::IDs(ids) => {
                 if ids.len() == 0 {
                     return Ok(Vec::new());
                 }
@@ -343,13 +340,13 @@ mod tests {
 
         let id = db.create_entity("name", "description").await.unwrap();
 
-        let entity = db.get_entity(GetEntityOpt::Id(id)).await.unwrap().unwrap();
+        let entity = db.get_entity(GetOpt::ID(id)).await.unwrap().unwrap();
         assert_eq!(entity.id, id);
         assert_eq!(entity.name, "name");
         assert_eq!(entity.description, "description");
 
         let entity = db
-            .get_entity(GetEntityOpt::Name("name".to_owned()))
+            .get_entity(GetOpt::Name("name".to_owned()))
             .await
             .unwrap()
             .unwrap();
@@ -358,12 +355,12 @@ mod tests {
         assert_eq!(entity.description, "description");
 
         let res = db
-            .get_entity(GetEntityOpt::Name("not_exist".to_owned()))
+            .get_entity(GetOpt::Name("not_exist".to_owned()))
             .await
             .unwrap();
         assert!(res.is_none());
 
-        let res = db.get_entity(GetEntityOpt::Id(id + 1)).await.unwrap();
+        let res = db.get_entity(GetOpt::ID(id + 1)).await.unwrap();
         assert!(res.is_none());
     }
 
@@ -375,7 +372,7 @@ mod tests {
 
         assert!(db.update_entity(id, "new_description").await.is_ok());
 
-        let entity = db.get_entity(GetEntityOpt::Id(id)).await.unwrap().unwrap();
+        let entity = db.get_entity(GetOpt::ID(id)).await.unwrap().unwrap();
         assert_eq!(entity.id, id);
         assert_eq!(entity.name, "name");
         assert_eq!(entity.description, "new_description");
@@ -395,34 +392,28 @@ mod tests {
     fn list_entity(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        let entitys = db.list_entity(ListEntityOpt::All).await.unwrap();
+        let entitys = db.list_entity(ListOpt::All).await.unwrap();
         assert_eq!(entitys.len(), 0);
 
         assert!(db.create_entity("name", "description").await.is_ok());
-        let entitys = db.list_entity(ListEntityOpt::All).await.unwrap();
+        let entitys = db.list_entity(ListOpt::All).await.unwrap();
         assert_eq!(entitys.len(), 1);
 
         assert!(db.create_entity("name2", "description").await.is_ok());
-        let entitys = db.list_entity(ListEntityOpt::All).await.unwrap();
+        let entitys = db.list_entity(ListOpt::All).await.unwrap();
         assert_eq!(entitys.len(), 2);
 
         assert!(db.create_entity("name3", "description").await.is_ok());
-        let entitys = db
-            .list_entity(ListEntityOpt::Ids(vec![1, 2]))
-            .await
-            .unwrap();
+        let entitys = db.list_entity(ListOpt::IDs(vec![1, 2])).await.unwrap();
         assert_eq!(entitys.len(), 2);
 
         let entitys = db
-            .list_entity(ListEntityOpt::Ids(vec![1, 2, 3, 4]))
+            .list_entity(ListOpt::IDs(vec![1, 2, 3, 4]))
             .await
             .unwrap();
         assert_eq!(entitys.len(), 3);
 
-        let entitys = db
-            .list_entity(ListEntityOpt::Ids(Vec::new()))
-            .await
-            .unwrap();
+        let entitys = db.list_entity(ListOpt::IDs(Vec::new())).await.unwrap();
         assert_eq!(entitys.len(), 0);
     }
 
@@ -482,22 +473,20 @@ mod tests {
         };
         let id = db.create_group(group_zero.clone().into()).await.unwrap();
 
-        let group = db.get_group(GetGroupOpt::Id(id)).await.unwrap().unwrap();
+        let group = db.get_group(GetOpt::ID(id)).await.unwrap().unwrap();
         assert_eq_of_group(&group, &group_zero);
 
         let group = db
-            .get_group(GetGroupOpt::Name(group_zero.name.clone()))
+            .get_group(GetOpt::Name(group_zero.name.clone()))
             .await
             .unwrap()
             .unwrap();
         assert_eq_of_group(&group, &group_zero);
 
-        let res = db.get_group(GetGroupOpt::Id(id + 1)).await;
+        let res = db.get_group(GetOpt::ID(id + 1)).await;
         assert!(res.is_ok_and(|res| res.is_none()));
 
-        let res = db
-            .get_group(GetGroupOpt::Name("not_exist".to_owned()))
-            .await;
+        let res = db.get_group(GetOpt::Name("not_exist".to_owned())).await;
         assert!(res.is_ok_and(|res| res.is_none()));
     }
 
@@ -530,7 +519,7 @@ mod tests {
         };
         let group_id = db.create_group(origin_group.clone().into()).await.unwrap();
         assert!(db.update_group(group_id, "new_description").await.is_ok());
-        let group = db.get_group(GetGroupOpt::Id(group_id)).await.unwrap();
+        let group = db.get_group(GetOpt::ID(group_id)).await.unwrap();
         assert!(group.is_some_and(|g| {
             g.id == origin_group.id
                 && g.entity_id == origin_group.entity_id
@@ -546,7 +535,7 @@ mod tests {
 
         let entity_id = db.create_entity("entity", "description").await.unwrap();
 
-        let groups = db.list_group(ListGroupOpt::All).await.unwrap();
+        let groups = db.list_group(ListOpt::All).await.unwrap();
         assert_eq!(groups.len(), 0);
 
         assert!(db
@@ -558,7 +547,7 @@ mod tests {
             })
             .await
             .is_ok());
-        let groups = db.list_group(ListGroupOpt::All).await.unwrap();
+        let groups = db.list_group(ListOpt::All).await.unwrap();
         assert_eq!(groups.len(), 1);
 
         assert!(db
@@ -570,13 +559,10 @@ mod tests {
             })
             .await
             .is_ok());
-        let groups = db.list_group(ListGroupOpt::All).await.unwrap();
+        let groups = db.list_group(ListOpt::All).await.unwrap();
         assert_eq!(groups.len(), 2);
 
-        let group = db
-            .list_group(ListGroupOpt::Ids(vec![1, 2, 3]))
-            .await
-            .unwrap();
+        let group = db.list_group(ListOpt::IDs(vec![1, 2, 3])).await.unwrap();
         assert_eq!(group.len(), 2);
     }
 
@@ -674,8 +660,14 @@ mod tests {
             .await
             .unwrap();
 
+        let feature = db.get_feature(GetOpt::ID(id)).await.unwrap().unwrap();
+        assert_eq!(feature.id, 1);
+        assert_eq!(feature.name, "feature".to_owned());
+        assert_eq!(feature.group_id, group_id);
+        assert_eq!(feature.description, "description".to_owned());
+
         let feature = db
-            .get_feature(GetFeatureOpt::Id(id))
+            .get_feature(GetOpt::Name("feature".to_owned()))
             .await
             .unwrap()
             .unwrap();
@@ -684,17 +676,7 @@ mod tests {
         assert_eq!(feature.group_id, group_id);
         assert_eq!(feature.description, "description".to_owned());
 
-        let feature = db
-            .get_feature(GetFeatureOpt::Name("feature".to_owned()))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(feature.id, 1);
-        assert_eq!(feature.name, "feature".to_owned());
-        assert_eq!(feature.group_id, group_id);
-        assert_eq!(feature.description, "description".to_owned());
-
-        let res = db.get_feature(GetFeatureOpt::Id(id + 1)).await;
+        let res = db.get_feature(GetOpt::ID(id + 1)).await;
         assert!(res.is_ok_and(|res| res.is_none()));
     }
 
@@ -736,7 +718,7 @@ mod tests {
             .await
             .is_ok());
 
-        let feature = db.get_feature(GetFeatureOpt::Id(feature_id)).await.unwrap();
+        let feature = db.get_feature(GetOpt::ID(feature_id)).await.unwrap();
         assert!(feature.is_some_and(|f| {
             f.id == feature_id
                 && f.group_id == group_id
@@ -768,7 +750,7 @@ mod tests {
             .await
             .unwrap();
 
-        let features = db.list_feature(ListFeatureOpt::All).await.unwrap();
+        let features = db.list_feature(ListOpt::All).await.unwrap();
         assert_eq!(features.len(), 0);
 
         assert!(db
@@ -781,7 +763,7 @@ mod tests {
             .await
             .is_ok());
 
-        let features = db.list_feature(ListFeatureOpt::All).await.unwrap();
+        let features = db.list_feature(ListOpt::All).await.unwrap();
         assert_eq!(features.len(), 1);
 
         assert!(db
@@ -794,13 +776,10 @@ mod tests {
             .await
             .is_ok());
 
-        let features = db.list_feature(ListFeatureOpt::All).await.unwrap();
+        let features = db.list_feature(ListOpt::All).await.unwrap();
         assert_eq!(features.len(), 2);
 
-        let features = db
-            .list_feature(ListFeatureOpt::Ids(vec![1, 2, 3]))
-            .await
-            .unwrap();
+        let features = db.list_feature(ListOpt::IDs(vec![1, 2, 3])).await.unwrap();
         assert_eq!(features.len(), 2);
     }
 }

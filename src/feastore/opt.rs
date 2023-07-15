@@ -1,6 +1,6 @@
 use crate::database::SQLiteOpt;
 
-pub struct FeastoreOpt {
+pub struct FeastoreConfig {
     pub metadata: BackendOpt,
 }
 
