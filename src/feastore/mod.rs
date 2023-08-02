@@ -1,5 +1,7 @@
+pub mod apply;
 pub mod entity;
 pub mod opt;
+pub mod types;
 
 use crate::database::metadata;
 use opt::FeastoreConfig;
