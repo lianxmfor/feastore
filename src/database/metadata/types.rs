@@ -1,5 +1,7 @@
+#![allow(dead_code)]
 use chrono::DateTime;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::FromRow)]
 pub struct Entity {
@@ -99,7 +101,8 @@ impl From<Group> for CreateGroupOpt {
     }
 }
 
-#[derive(sqlx::Type, Default, PartialEq, Debug, Clone)]
+#[derive(sqlx::Type, Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Category {
     #[default]
     Batch,

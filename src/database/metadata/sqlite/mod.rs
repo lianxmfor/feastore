@@ -1,3 +1,4 @@
+#![allow(unused_variables, dead_code)]
 pub mod schema;
 
 use async_trait::async_trait;
@@ -16,13 +17,17 @@ pub struct DB {
 
 impl DB {
     pub async fn from(db_file: SQLiteOpt) -> DB {
-        let pool = SqlitePool::connect(format!("sqlite://{}", db_file.db_file).as_str())
+        let pool = SqlitePool::connect(format!("sqlite://{}", &db_file.db_file).as_str())
             .await
-            .unwrap();
+            .expect(&format!("open {} failed!", db_file.db_file));
 
         let db = DB { pool };
         db.create_database().await;
         db
+    }
+
+    fn from_pool(pool: SqlitePool) -> DB {
+        DB { pool }
     }
 
     async fn create_database(&self) {
@@ -51,10 +56,6 @@ impl DB {
             );
             sqlx::query(&trigger).execute(&self.pool).await.unwrap();
         }
-    }
-
-    fn from_pool(pool: SqlitePool) -> DB {
-        DB { pool }
     }
 }
 

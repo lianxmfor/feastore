@@ -20,4 +20,6 @@ impl FeaStore {
     pub async fn close(&self) {
         self.metadata.close().await;
     }
+
+    pub async fn apply() {}
 }
