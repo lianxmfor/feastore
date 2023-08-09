@@ -1,150 +1,252 @@
+use clap::error::Result;
 use serde::Deserialize;
-use serde_yaml::Value;
+use serde_with::{serde_as, DurationSeconds};
+use serde_yaml as yaml;
 
 use std::collections::HashMap;
+use std::io::Read;
+use std::time::Duration;
 
-use crate::feastore::types::{ApplyOpt, ApplyStage, Entity, Feature, Group};
+use crate::database::metadata::types::Category;
 
-fn build_apply_stage<R: std::io::Read>(opt: ApplyOpt<R>) -> Result<ApplyStage, String> {
-    let mut stage = ApplyStage::new();
-    for document in serde_yaml::Deserializer::from_reader(opt.r) {
-        let value = Value::deserialize(document).expect("Unable to parse");
+use crate::FeaStore;
 
-        match parse_kind(&value) {
-            Some("Entity") => {
-                let entity: Entity = serde_yaml::from_value(value).expect("Unable to parse");
+impl FeaStore {
+    pub async fn apply<R: std::io::Read>(&self, opt: ApplyOpt<R>) -> Result<(), String> {
+        let stage = ApplyStage::from_opt(opt)?;
 
-                stage.new_entities.push(build_entity(&entity));
-                if let Some(groups) = entity.groups {
-                    for group in groups {
-                        stage
-                            .new_groups
-                            .push(build_group(&group, Some(entity.name.clone())));
-
-                        if let Some(features) = group.features {
-                            for feature in features {
-                                stage
-                                    .new_features
-                                    .push(build_feature(&feature, Some(group.name.clone())))
-                            }
-                        }
-                    }
-                }
-            }
-            Some("Group") => {
-                let group: Group = serde_yaml::from_value(value).expect("Unable to parse");
-
-                stage
-                    .new_groups
-                    .push(build_group(&group, group.entity_name.clone()));
-
-                if let Some(features) = group.features {
-                    for feature in features {
-                        stage
-                            .new_features
-                            .push(build_feature(&feature, Some(group.name.clone())));
-                    }
-                }
-            }
-            Some("Feature") => {
-                let feature: Feature = serde_yaml::from_value(value).expect("Unable to parse");
-                stage
-                    .new_features
-                    .push(build_feature(&feature, feature.group_name.clone()));
-            }
-            Some("Items") | Some("items") => match parse_items_kind(&value) {
-                Some("Entity") => {
-                    let entities: HashMap<String, Vec<Entity>> =
-                        serde_yaml::from_value(value).expect("Unable to parse");
-                    let entities = if let Some(entities) = entities.get("Items") {
-                        Some(entities)
-                    } else if let Some(entities) = entities.get("items") {
-                        Some(entities)
-                    } else {
-                        None
-                    };
-
-                    if let Some(entities) = entities {
-                        for entity in entities {
-                            stage.new_entities.push(build_entity(&entity));
-
-                            if let Some(groups) = &entity.groups {
-                                for group in groups {
-                                    stage
-                                        .new_groups
-                                        .push(build_group(&group, Some(entity.name.clone())));
-
-                                    if let Some(features) = &group.features {
-                                        for feature in features {
-                                            stage.new_features.push(build_feature(
-                                                feature,
-                                                Some(group.name.clone()),
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Some("Group") => {
-                    let groups: HashMap<String, Vec<Group>> =
-                        serde_yaml::from_value(value).expect("Unable to parse");
-                    let groups = if let Some(groups) = groups.get("Items") {
-                        Some(groups)
-                    } else if let Some(groups) = groups.get("items") {
-                        Some(groups)
-                    } else {
-                        None
-                    };
-
-                    if let Some(groups) = groups {
-                        for group in groups {
-                            stage
-                                .new_groups
-                                .push(build_group(&group, group.entity_name.clone()));
-
-                            if let Some(features) = &group.features {
-                                for feature in features {
-                                    stage
-                                        .new_features
-                                        .push(build_feature(feature, Some(group.name.clone())));
-                                }
-                            }
-                        }
-                    }
-                }
-                Some("Feature") => {
-                    let features: HashMap<String, Vec<Feature>> =
-                        serde_yaml::from_value(value).expect("Unable to parse");
-
-                    let features = if let Some(features) = features.get("Items") {
-                        Some(features)
-                    } else if let Some(features) = features.get("items") {
-                        Some(features)
-                    } else {
-                        None
-                    };
-
-                    if let Some(features) = features {
-                        for feature in features {
-                            stage
-                                .new_features
-                                .push(build_feature(&feature, feature.group_name.clone()));
-                        }
-                    }
-                }
-                Some(_) => {}
-                None => {}
-            },
-            Some(kind) => return Err(format!("invalid kind '{}'", kind)),
-            None => return Err("invalid yaml: missing kind or items".to_string()),
-        }
+        Ok(())
     }
-    Ok(stage)
+
+    fn apply_entity() -> Result<(), String> {
+        Ok(())
+    }
+
+    fn apply_group() -> Result<(), String> {
+        Ok(())
+    }
+
+    fn apply_feature() -> Result<(), String> {
+        Ok(())
+    }
 }
 
-fn parse_kind(value: &serde_yaml::Value) -> Option<&str> {
+pub struct ApplyOpt<R: std::io::Read> {
+    pub r: R,
+}
+
+#[derive(Debug, PartialEq)]
+struct ApplyStage {
+    pub new_entities: Vec<Entity>,
+    pub new_groups: Vec<Group>,
+    pub new_features: Vec<Feature>,
+}
+
+impl ApplyStage {
+    pub fn from_opt<R: Read>(opt: ApplyOpt<R>) -> Result<Self, String> {
+        let mut stage = ApplyStage::empty();
+
+        for descrializer in yaml::Deserializer::from_reader(opt.r) {
+            let value = yaml::Value::deserialize(descrializer).expect("Unable to parse");
+            let sub_stage = Self::from_value(value)?;
+            stage.merge(sub_stage);
+        }
+
+        Ok(stage)
+    }
+}
+
+impl ApplyStage {
+    fn empty() -> Self {
+        Self {
+            new_entities: Vec::new(),
+            new_groups: Vec::new(),
+            new_features: Vec::new(),
+        }
+    }
+
+    fn from_value(value: yaml::Value) -> Result<Self, String> {
+        match parse_kind(&value) {
+            Some("Entity") => {
+                let entity: Entity = yaml::from_value(value).expect("Unable to parse");
+                Ok(Self::from_entity(entity))
+            }
+            Some("Group") => {
+                let group: Group = yaml::from_value(value).expect("Unable to parse");
+                Ok(Self::from_group(group))
+            }
+            Some("Feature") => {
+                let feature: Feature = yaml::from_value(value).expect("Unable to parse");
+                Ok(Self::from_feature(feature))
+            }
+            Some("Items") | Some("items") => {
+                let items = if value["items"].is_sequence() {
+                    "items"
+                } else {
+                    "Items"
+                };
+
+                let mut stage = Self::empty();
+                match parse_items_kind(&value) {
+                    Some("Entity") => {
+                        let mut entities: HashMap<String, Vec<Entity>> =
+                            yaml::from_value(value).expect("Unable to parse");
+
+                        for entity in entities.remove(items).unwrap_or_default() {
+                            stage.merge(Self::from_entity(entity));
+                        }
+                    }
+                    Some("Group") => {
+                        let mut groups: HashMap<String, Vec<Group>> =
+                            yaml::from_value(value).expect("Unable to parse");
+
+                        for group in groups.remove(items).unwrap_or_default() {
+                            stage.merge(Self::from_group(group));
+                        }
+                    }
+                    Some("Feature") => {
+                        let mut features: HashMap<String, Vec<Feature>> =
+                            yaml::from_value(value).expect("Unable to parse");
+
+                        for feature in features.remove(items).unwrap_or_default() {
+                            stage.merge(Self::from_feature(feature));
+                        }
+                    }
+                    Some(kind) => return Err(format!("invalid kind '{}'", kind)),
+                    None => return Err("invalid yaml: missing kind or items".to_string()),
+                }
+
+                Ok(stage)
+            }
+            Some(kind) => Err(format!("invalid kind '{}'", kind)),
+            None => Err("invalid yaml: missing kind or items".to_string()),
+        }
+    }
+
+    fn from_entity(entity: Entity) -> Self {
+        let mut stage = ApplyStage::empty();
+
+        stage.new_entities.push(entity.flat());
+        for group in entity.groups.unwrap_or_default() {
+            stage.new_groups.push(group.flat(Some(entity.name.clone())));
+
+            for feature in group.features.unwrap_or_default() {
+                stage
+                    .new_features
+                    .push(feature.fill(Some(group.name.clone())));
+            }
+        }
+
+        stage
+    }
+
+    fn from_group(group: Group) -> Self {
+        let mut stage = ApplyStage::empty();
+
+        stage
+            .new_groups
+            .push(group.flat(group.entity_name.to_owned()));
+
+        for feature in group.features.unwrap_or_default() {
+            stage
+                .new_features
+                .push(feature.fill(Some(group.name.to_owned())));
+        }
+
+        stage
+    }
+
+    fn from_feature(feature: Feature) -> Self {
+        let mut stage = ApplyStage::empty();
+
+        stage
+            .new_features
+            .push(feature.fill(feature.group_name.to_owned()));
+
+        stage
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.new_entities.extend(other.new_entities);
+        self.new_groups.extend(other.new_groups);
+        self.new_features.extend(other.new_features);
+    }
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+pub struct Feature {
+    kind: Option<String>,
+    name: String,
+    #[serde(rename(serialize = "group-name", deserialize = "group-name"))]
+    group_name: Option<String>,
+    #[serde(rename(serialize = "value-type", deserialize = "value-type"))]
+    value_type: String,
+    description: String,
+}
+
+impl Feature {
+    fn fill(&self, group_name: Option<String>) -> Self {
+        Self {
+            kind: Some("Feature".to_string()),
+            name: self.name.to_owned(),
+            group_name,
+            value_type: self.value_type.to_owned(),
+            description: self.description.to_owned(),
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Deserialize, Debug, PartialEq)]
+pub struct Group {
+    kind: Option<String>,
+    name: String,
+    #[serde(rename(serialize = "entity-name", deserialize = "entity-name"))]
+    entity_name: Option<String>,
+    category: Category,
+    #[serde(rename(serialize = "snapshot-interval", deserialize = "snapshot-interval"))]
+    #[serde_as(as = "Option<DurationSeconds>")]
+    snapshot_interval: Option<Duration>,
+    description: String,
+
+    features: Option<Vec<Feature>>,
+}
+
+impl Group {
+    fn flat(&self, entity_name: Option<String>) -> Self {
+        Self {
+            kind: Some("Group".to_string()),
+            name: self.name.to_owned(),
+            entity_name,
+            category: self.category.to_owned(),
+            snapshot_interval: self.snapshot_interval,
+            description: self.description.to_owned(),
+            features: None,
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+pub struct Entity {
+    kind: Option<String>,
+    name: String,
+    description: String,
+
+    groups: Option<Vec<Group>>,
+}
+
+impl Entity {
+    fn flat(&self) -> Self {
+        Self {
+            kind: Some("Entity".to_string()),
+            name: self.name.to_owned(),
+            description: self.description.to_owned(),
+            groups: None,
+        }
+    }
+}
+
+fn parse_kind(value: &yaml::Value) -> Option<&str> {
     if value["kind"].is_string() {
         return value["kind"].as_str();
     }
@@ -157,44 +259,13 @@ fn parse_kind(value: &serde_yaml::Value) -> Option<&str> {
     None
 }
 
-fn parse_items_kind(value: &serde_yaml::Value) -> Option<&str> {
+fn parse_items_kind(value: &yaml::Value) -> Option<&str> {
     if let Some(sequence) = value["items"].as_sequence() {
         if sequence.len() > 0 {
             return sequence[0]["kind"].as_str();
         }
     }
     None
-}
-
-fn build_entity(entity: &Entity) -> Entity {
-    Entity {
-        kind: Some("Entity".to_string()),
-        name: entity.name.to_owned(),
-        description: entity.description.to_owned(),
-        groups: None,
-    }
-}
-
-fn build_group(group: &Group, entity_name: Option<String>) -> Group {
-    Group {
-        kind: Some("Group".to_string()),
-        name: group.name.to_owned(),
-        entity_name,
-        category: group.category.to_owned(),
-        snapshot_interval: group.snapshot_interval,
-        description: group.description.to_owned(),
-        features: None,
-    }
-}
-
-fn build_feature(feature: &Feature, group_name: Option<String>) -> Feature {
-    Feature {
-        kind: Some("Feature".to_string()),
-        name: feature.name.to_owned(),
-        group_name,
-        value_type: feature.value_type.to_owned(),
-        description: feature.description.to_owned(),
-    }
 }
 
 #[cfg(test)]
@@ -847,7 +918,7 @@ items:
         ];
 
         for case in test_cases {
-            let stage = build_apply_stage(case.opt);
+            let stage = ApplyStage::from_opt(case.opt);
             assert_eq!(stage, case.want, "{}", case.description);
         }
     }

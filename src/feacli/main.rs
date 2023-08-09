@@ -1,4 +1,4 @@
-mod apply;
+//mod apply;
 mod get;
 
 use clap::{Parser, Subcommand};
@@ -16,7 +16,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Apply(apply::Cmd),
+    //Apply(apply::Cmd),
     Edit(GetCommands),
     Register(GetCommands),
     Get(GetCommands),
@@ -28,7 +28,7 @@ impl Cli {
         let feastore = FeaStore::open(cfg).await;
 
         match &self.command {
-            Commands::Apply(cmd) => cmd.execute(feastore),
+            //Commands::Apply(cmd) => cmd.execute(feastore),
             Commands::Edit(cmd) => cmd.execute(feastore),
             Commands::Register(cmd) => cmd.execute(feastore),
             Commands::Get(cmd) => cmd.execute(feastore),
