@@ -3,18 +3,18 @@ pub mod entity;
 pub mod opt;
 
 use crate::database::metadata;
-use opt::FeastoreConfig;
+use opt::FeaStoreConfig;
 
 pub struct FeaStore {
-    metadata: Box<dyn metadata::DBStore>,
+    metadata: metadata::DataStore,
 }
 
 impl FeaStore {
-    pub async fn open(opt: FeastoreConfig) -> FeaStore {
-        let metadata_store = metadata::open(opt.metadata).await;
+    pub async fn open(opt: FeaStoreConfig) -> FeaStore {
+        let metadata_store = metadata::DataStore::open(opt.metadata).await;
 
         FeaStore {
-            metadata: Box::new(metadata_store),
+            metadata: metadata_store,
         }
     }
 

@@ -7,27 +7,15 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
 
-use crate::database::metadata::types::Category;
+use crate::database::error::Error;
+use crate::database::metadata::types::{Category, FeatureValueType};
 
 use crate::FeaStore;
 
 impl FeaStore {
-    pub async fn apply<R: std::io::Read>(&self, opt: ApplyOpt<R>) -> Result<(), String> {
-        let stage = ApplyStage::from_opt(opt)?;
-
-        Ok(())
-    }
-
-    fn apply_entity() -> Result<(), String> {
-        Ok(())
-    }
-
-    fn apply_group() -> Result<(), String> {
-        Ok(())
-    }
-
-    fn apply_feature() -> Result<(), String> {
-        Ok(())
+    pub async fn apply<R: std::io::Read>(&self, opt: ApplyOpt<R>) -> Result<(), Error> {
+        let stage = ApplyStage::from_opt(opt).map_err(|e| Error::Other(e))?;
+        self.metadata.apply(stage).await
     }
 }
 
@@ -36,7 +24,7 @@ pub struct ApplyOpt<R: std::io::Read> {
 }
 
 #[derive(Debug, PartialEq)]
-struct ApplyStage {
+pub(crate) struct ApplyStage {
     pub new_entities: Vec<Entity>,
     pub new_groups: Vec<Group>,
     pub new_features: Vec<Feature>,
@@ -46,8 +34,8 @@ impl ApplyStage {
     pub fn from_opt<R: Read>(opt: ApplyOpt<R>) -> Result<Self, String> {
         let mut stage = ApplyStage::empty();
 
-        for descrializer in yaml::Deserializer::from_reader(opt.r) {
-            let value = yaml::Value::deserialize(descrializer).expect("Unable to parse");
+        for deserializer in yaml::Deserializer::from_reader(opt.r) {
+            let value = yaml::Value::deserialize(deserializer).expect("Unable to parse");
             let sub_stage = Self::from_value(value)?;
             stage.merge(sub_stage);
         }
@@ -112,6 +100,14 @@ impl ApplyStage {
                             stage.merge(Self::from_feature(feature));
                         }
                     }
+                    Some("Features") => {
+                        let mut features: HashMap<String, Vec<Feature>> =
+                            yaml::from_value(value).expect("Unable to parse");
+
+                        for feature in features.remove(items).unwrap_or_default() {
+                            stage.merge(Self::from_feature(feature));
+                        }
+                    }
                     Some(kind) => return Err(format!("invalid kind '{}'", kind)),
                     None => return Err("invalid yaml: missing kind or items".to_string()),
                 }
@@ -162,7 +158,6 @@ impl ApplyStage {
         stage
             .new_features
             .push(feature.fill(feature.group_name.to_owned()));
-
         stage
     }
 
@@ -175,13 +170,13 @@ impl ApplyStage {
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct Feature {
-    kind: Option<String>,
-    name: String,
+    pub kind: Option<String>,
+    pub name: String,
     #[serde(rename(serialize = "group-name", deserialize = "group-name"))]
-    group_name: Option<String>,
+    pub group_name: Option<String>,
     #[serde(rename(serialize = "value-type", deserialize = "value-type"))]
-    value_type: String,
-    description: String,
+    pub value_type: FeatureValueType,
+    pub description: String,
 }
 
 impl Feature {
@@ -200,14 +195,14 @@ impl Feature {
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct Group {
     kind: Option<String>,
-    name: String,
+    pub name: String,
     #[serde(rename(serialize = "entity-name", deserialize = "entity-name"))]
-    entity_name: Option<String>,
-    category: Category,
+    pub entity_name: Option<String>,
+    pub category: Category,
     #[serde(rename(serialize = "snapshot-interval", deserialize = "snapshot-interval"))]
     #[serde_as(as = "Option<DurationSeconds>")]
     snapshot_interval: Option<Duration>,
-    description: String,
+    pub description: String,
 
     features: Option<Vec<Feature>>,
 }
@@ -229,8 +224,8 @@ impl Group {
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct Entity {
     kind: Option<String>,
-    name: String,
-    description: String,
+    pub name: String,
+    pub description: String,
 
     groups: Option<Vec<Group>>,
 }
@@ -261,7 +256,7 @@ fn parse_kind(value: &yaml::Value) -> Option<&str> {
 
 fn parse_items_kind(value: &yaml::Value) -> Option<&str> {
     if let Some(sequence) = value["items"].as_sequence() {
-        if sequence.len() > 0 {
+        if !sequence.is_empty() {
             return sequence[0]["kind"].as_str();
         }
     }
@@ -413,14 +408,14 @@ description: 'description'
                             kind: Some(s("Feature")),
                             name: s("model"),
                             group_name: Some(s("device")),
-                            value_type: s("string"),
+                            value_type: FeatureValueType::StringType,
                             description: s("description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("price"),
                             group_name: Some(s("device")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("description"),
                         },
                     ],
@@ -461,14 +456,14 @@ features:
                             kind: Some(s("Feature")),
                             name: s("model"),
                             group_name: Some(s("device")),
-                            value_type: s("string"),
+                            value_type: FeatureValueType::StringType,
                             description: s("description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("price"),
                             group_name: Some(s("device")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("description"),
                         },
                     ],
@@ -557,42 +552,42 @@ groups:
                             kind: Some(s("Feature")),
                             name: s("model"),
                             group_name: Some(s("device")),
-                            value_type: s("string"),
+                            value_type: FeatureValueType::StringType,
                             description: s("description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("price"),
                             group_name: Some(s("device")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("age"),
                             group_name: Some(s("user")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("gender"),
                             group_name: Some(s("user")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("last_5_click_posts"),
                             group_name: Some(s("user-click")),
-                            value_type: s("string"),
+                            value_type: FeatureValueType::StringType,
                             description: s("description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("number_of_user_started_posts"),
                             group_name: Some(s("user-click")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("description"),
                         },
                     ],
@@ -639,35 +634,35 @@ items:
                             kind: Some(s("Feature")),
                             name: s("credit_score"),
                             group_name: Some(s("account")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("credit_score description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("account_age_days"),
                             group_name: Some(s("account")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("account_age_days description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("has_2fa_installed"),
                             group_name: Some(s("account")),
-                            value_type: s("bool"),
+                            value_type: FeatureValueType::Bool,
                             description: s("has_2fa_installed description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("transaction_count_7d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("transaction_count_7d description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("transaction_count_30d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("transaction_count_30d description"),
                         },
                     ],
@@ -735,35 +730,35 @@ items:
                             kind: Some(s("Feature")),
                             name: s("credit_score"),
                             group_name: Some(s("account")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("credit_score description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("account_age_days"),
                             group_name: Some(s("account")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("account_age_days description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("has_2fa_installed"),
                             group_name: Some(s("account")),
-                            value_type: s("bool"),
+                            value_type: FeatureValueType::Bool,
                             description: s("has_2fa_installed description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("transaction_count_7d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("transaction_count_7d description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("transaction_count_30d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("transaction_count_30d description"),
                         },
                     ],
@@ -867,49 +862,49 @@ items:
                             kind: Some(s("Feature")),
                             name: s("credit_score"),
                             group_name: Some(s("account")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("credit_score description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("account_age_days"),
                             group_name: Some(s("account")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("account_age_days description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("has_2fa_installed"),
                             group_name: Some(s("account")),
-                            value_type: s("bool"),
+                            value_type: FeatureValueType::Bool,
                             description: s("has_2fa_installed description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("transaction_count_7d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("transaction_count_7d description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("transaction_count_30d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("transaction_count_30d description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("model"),
                             group_name: Some(s("phone")),
-                            value_type: s("string"),
+                            value_type: FeatureValueType::StringType,
                             description: s("model description"),
                         },
                         Feature {
                             kind: Some(s("Feature")),
                             name: s("price"),
                             group_name: Some(s("phone")),
-                            value_type: s("int64"),
+                            value_type: FeatureValueType::Int64,
                             description: s("price description"),
                         },
                     ],

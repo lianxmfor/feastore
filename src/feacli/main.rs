@@ -2,7 +2,7 @@
 mod get;
 
 use clap::{Parser, Subcommand};
-use feastore::{opt::FeastoreConfig, FeaStore};
+use feastore::{opt::FeaStoreConfig, FeaStore};
 use get::GetCommands;
 
 #[derive(Parser)]
@@ -37,7 +37,7 @@ impl Cli {
 }
 
 impl Cli {
-    fn init_config(&self) -> FeastoreConfig {
+    fn init_config(&self) -> FeaStoreConfig {
         let config: String = if let Some(cfg) = &self.config {
             cfg.to_owned()
         } else if let Ok(cfg) = std::env::var("FEASTORE_CONFIG") {
