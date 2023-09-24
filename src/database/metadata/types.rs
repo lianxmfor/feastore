@@ -13,9 +13,11 @@ pub struct Entity {
     pub modify_time: DateTime<Utc>,
 }
 
-#[derive(sqlx::Type, Default, PartialEq, Debug, Clone)]
+#[derive(Deserialize, sqlx::Type, Default, PartialEq, Debug, Clone)]
+#[serde(rename_all(serialize = "lowercase", deserialize = "lowercase"))]
 pub enum FeatureValueType {
     #[default]
+    #[serde(rename = "string")]
     StringType,
     Int64,
     Float64,

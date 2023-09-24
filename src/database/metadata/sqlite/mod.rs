@@ -1,36 +1,38 @@
 #![allow(unused_variables, dead_code)]
 pub mod schema;
 
-use async_trait::async_trait;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 
-use crate::database::error::Error;
-use crate::database::metadata::types::{self, *};
-use crate::database::metadata::DBStore;
-use crate::database::Result;
-use crate::database::SQLiteOpt;
+use crate::database::{
+    error::Error,
+    metadata::types::{self, *},
+    Result, SQLiteOpt,
+};
+
+use crate::feastore::apply::ApplyStage;
 use schema::{META_TABLE_SCHEMAS, META_VIEW_SCHEMAS};
 
 pub struct DB {
-    pool: SqlitePool,
+    pub pool: SqlitePool,
 }
 
 impl DB {
-    pub async fn from(db_file: SQLiteOpt) -> DB {
+    pub(crate) async fn from(db_file: SQLiteOpt) -> Self {
         let pool = SqlitePool::connect(format!("sqlite://{}", &db_file.db_file).as_str())
             .await
             .expect(&format!("open {} failed!", db_file.db_file));
 
-        let db = DB { pool };
-        db.create_database().await;
+        let db = Self { pool };
+        db.create_schemas().await;
         db
     }
-
-    fn from_pool(pool: SqlitePool) -> DB {
-        DB { pool }
+    fn from_pool(pool: SqlitePool) -> Self {
+        Self { pool }
     }
+}
 
-    async fn create_database(&self) {
+impl DB {
+    async fn create_schemas(&self) {
         for table_schema in META_TABLE_SCHEMAS.values() {
             sqlx::query(&table_schema)
                 .execute(&self.pool)
@@ -46,267 +48,460 @@ impl DB {
             //TODO: use template engine instead {}
             let trigger = format!(
                 r"
-                    CREATE TRIGGER {}_update_modify_time
-                    AFTER UPDATE ON {}
+                    CREATE TRIGGER {table}_update_modify_time
+                    AFTER UPDATE ON {table}
                     BEGIN
-                        update {} SET modify_time = datetime('now') WHERE id = NEW.id;
-                    END;
-            ",
-                table, table, table
+                        update {table} SET modify_time = datetime('now') WHERE id = NEW.id;
+                    END;"
             );
             sqlx::query(&trigger).execute(&self.pool).await.unwrap();
         }
     }
 }
 
-#[async_trait]
-impl DBStore for DB {
-    async fn close(&self) {
+impl DB {
+    pub(crate) async fn close(&self) {
         self.pool.close().await;
     }
 
-    async fn create_entity(&self, name: &str, description: &str) -> Result<i64> {
-        let res = sqlx::query("INSERT INTO entity (name, description) VALUES (?, ?)")
-            .bind(name)
-            .bind(description)
-            .execute(&self.pool)
-            .await;
+    pub(crate) async fn create_entity(&self, name: &str, description: &str) -> Result<i64> {
+        create_entity(&self.pool, name, description).await
+    }
+    pub(crate) async fn update_entity(&self, id: i64, new_description: &str) -> Result<()> {
+        update_entity(&self.pool, id, new_description).await
+    }
+    pub(crate) async fn get_entity(&self, opt: GetOpt) -> Result<Option<Entity>> {
+        get_entity(&self.pool, opt).await
+    }
+    pub(crate) async fn list_entity(&self, opt: ListOpt) -> Result<Vec<Entity>> {
+        list_entity(&self.pool, opt).await
+    }
 
-        match res {
-            Err(sqlx::Error::Database(e)) => {
-                if e.message() == format!("UNIQUE constraint failed: entity.name") {
-                    Err(Error::ColumnAlreadyExist(name.to_string()))
-                } else {
-                    Err(e.into())
+    pub(crate) async fn create_group(&self, group: CreateGroupOpt) -> Result<i64> {
+        create_group(&self.pool, group).await
+    }
+
+    pub(crate) async fn update_group(&self, id: i64, new_description: &str) -> Result<()> {
+        update_group(&self.pool, id, new_description).await
+    }
+
+    pub(crate) async fn get_group(&self, opt: GetOpt) -> Result<Option<Group>> {
+        get_group(&self.pool, opt).await
+    }
+
+    pub(crate) async fn list_group(&self, opt: ListOpt) -> Result<Vec<Group>> {
+        list_group(&self.pool, opt).await
+    }
+
+    pub(crate) async fn create_feature(&self, feature: CreateFeatureOpt) -> Result<i64> {
+        create_feature(&self.pool, feature).await
+    }
+
+    pub(crate) async fn update_feature(&self, id: i64, new_description: &str) -> Result<()> {
+        update_feature(&self.pool, id, new_description).await
+    }
+
+    pub(crate) async fn get_feature(&self, opt: GetOpt) -> Result<Option<Feature>> {
+        get_feature(&self.pool, opt).await
+    }
+
+    pub(crate) async fn list_feature(&self, opt: ListOpt) -> Result<Vec<Feature>> {
+        list_feature(&self.pool, opt).await
+    }
+
+    pub(crate) async fn apply(&self, stage: ApplyStage) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        for new_entity in stage.new_entities {
+            let entity = get_entity(&mut tx, GetOpt::Name(new_entity.name.clone())).await?;
+            match entity {
+                None => {
+                    create_entity(
+                        &mut tx,
+                        new_entity.name.as_str(),
+                        new_entity.description.as_str(),
+                    )
+                    .await?;
+                }
+                Some(entity) => {
+                    if entity.description != new_entity.description {
+                        update_entity(&mut tx, entity.id, new_entity.description.as_str()).await?;
+                    }
                 }
             }
-            _ => Ok(res?.last_insert_rowid()),
         }
-    }
 
-    async fn update_entity(&self, id: i64, new_description: &str) -> Result<()> {
-        let rows_affected = sqlx::query("UPDATE entity SET description = ? WHERE id = ?")
-            .bind(new_description)
-            .bind(id)
-            .execute(&self.pool)
-            .await?
-            .rows_affected();
+        for new_group in stage.new_groups {
+            let entity_name = if let Some(name) = new_group.entity_name {
+                name
+            } else {
+                continue;
+            };
 
-        if rows_affected != 1 {
-            Err(Error::ColumnNotFound("entity".to_owned(), id.to_string()))
-        } else {
-            Ok(())
+            let group = get_group(&mut tx, GetOpt::Name(new_group.name.clone())).await?;
+            match group {
+                None => {
+                    if let Some(entity) = get_entity(&mut tx, GetOpt::Name(entity_name)).await? {
+                        create_group(
+                            &mut tx,
+                            CreateGroupOpt {
+                                entity_id: entity.id,
+                                name: new_group.name,
+                                category: new_group.category,
+                                description: new_group.description,
+                            },
+                        )
+                        .await?;
+                    }
+                }
+                Some(group) => {
+                    if group.description != new_group.description {
+                        update_group(&mut tx, group.id, new_group.description.as_str()).await?;
+                    }
+                }
+            }
         }
-    }
 
-    async fn get_entity(&self, opt: types::GetOpt) -> Result<Option<types::Entity>> {
-        let query = match opt {
-            types::GetOpt::ID(id) => sqlx::query_as("SELECT * FROM entity WHERE id = ?").bind(id),
-            types::GetOpt::Name(name) => {
-                sqlx::query_as("SELECT * FROM entity WHERE name = ?").bind(name)
-            }
-        };
+        for new_feature in stage.new_features {
+            let group_name = if let Some(name) = new_feature.group_name {
+                name
+            } else {
+                continue;
+            };
 
-        Ok(query.fetch_optional(&self.pool).await?)
-    }
-
-    async fn list_entity(&self, opt: types::ListOpt) -> Result<Vec<types::Entity>> {
-        let mut query_str = "SELECT * FROM entity".to_owned();
-
-        let query = match opt {
-            types::ListOpt::All => sqlx::query(&query_str),
-            types::ListOpt::IDs(ids) => {
-                if ids.len() == 0 {
-                    return Ok(Vec::new());
+            let feature = get_feature(&mut tx, GetOpt::Name(new_feature.name.clone())).await?;
+            match feature {
+                None => {
+                    if let Some(group) = get_group(&mut tx, GetOpt::Name(group_name)).await? {
+                        create_feature(
+                            &mut tx,
+                            CreateFeatureOpt {
+                                group_id: group.id,
+                                feature_name: new_feature.name,
+                                description: new_feature.description,
+                                value_type: new_feature.value_type,
+                            },
+                        )
+                        .await?;
+                    }
                 }
-
-                query_str = format!("{query_str} WHERE id in (?{})", ", ?".repeat(ids.len() - 1));
-                let mut query = sqlx::query(&query_str);
-                for id in ids {
-                    query = query.bind(id);
-                }
-                query
-            }
-        };
-
-        let res = query
-            .fetch_all(&self.pool)
-            .await?
-            .iter()
-            .map(|row| types::Entity::from_row(row))
-            .collect::<std::result::Result<Vec<types::Entity>, sqlx::Error>>();
-
-        res.or_else(|e| Err(e.into()))
-    }
-
-    async fn create_group(&self, group: types::CreateGroupOpt) -> Result<i64> {
-        let res = sqlx::query("INSERT INTO feature_group (name, category, description, entity_id) VALUES (?, ?, ?, ?)")
-            .bind(&group.name)
-            .bind(group.category)
-            .bind(group.description)
-            .bind(group.entity_id)
-            .execute(&self.pool)
-            .await;
-
-        match res {
-            Err(sqlx::Error::Database(e)) => {
-                if e.message() == format!("UNIQUE constraint failed: feature_group.name") {
-                    Err(Error::ColumnAlreadyExist(group.name))
-                } else {
-                    Err(e.into())
+                Some(feature) => {
+                    if feature.description != new_feature.description {
+                        update_feature(&mut tx, feature.id, new_feature.description.as_str())
+                            .await?;
+                    }
                 }
             }
-            _ => Ok(res?.last_insert_rowid()),
         }
+
+        tx.commit().await.map_err(|e| e.into())
     }
+}
 
-    async fn update_group(&self, id: i64, new_description: &str) -> Result<()> {
-        let rows_affected = sqlx::query("UPDATE feature_group SET description = ? WHERE id = ?")
-            .bind(new_description)
-            .bind(id)
-            .execute(&self.pool)
-            .await?
-            .rows_affected();
+async fn apply(tx: &Transaction<'_, Sqlite>, stage: ApplyStage) -> Result<()> {
+    Ok(())
+}
 
-        if rows_affected != 1 {
-            Err(Error::ColumnNotFound(
-                "feature_group".to_owned(),
-                id.to_string(),
-            ))
-        } else {
-            Ok(())
-        }
-    }
+async fn create_entity<'a, A>(conn: A, name: &str, description: &str) -> Result<i64>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
 
-    async fn get_group(&self, opt: types::GetOpt) -> Result<Option<types::Group>> {
-        let query = match opt {
-            types::GetOpt::ID(id) => {
-                sqlx::query_as("SELECT * FROM feature_group WHERE id = ?").bind(id)
-            }
-            types::GetOpt::Name(name) => {
-                sqlx::query_as("SELECT * FROM feature_group WHERE name = ?").bind(name)
-            }
-        };
-
-        Ok(query.fetch_optional(&self.pool).await?)
-    }
-
-    async fn list_group(&self, opt: types::ListOpt) -> Result<Vec<types::Group>> {
-        let mut query_str = "SELECT * FROM feature_group".to_owned();
-
-        let query = match opt {
-            types::ListOpt::All => sqlx::query(&query_str),
-            types::ListOpt::IDs(ids) => {
-                if ids.len() == 0 {
-                    return Ok(Vec::new());
-                }
-
-                query_str = format!("{query_str} WHERE id in (?{})", ", ?".repeat(ids.len() - 1));
-                let mut query = sqlx::query(&query_str);
-                for id in ids {
-                    query = query.bind(id);
-                }
-                query
-            }
-        };
-
-        let res = query
-            .fetch_all(&self.pool)
-            .await?
-            .iter()
-            .map(|row| types::Group::from_row(row))
-            .collect::<std::result::Result<Vec<types::Group>, sqlx::Error>>();
-
-        res.or_else(|e| Err(e.into()))
-    }
-
-    async fn create_feature(&self, opt: types::CreateFeatureOpt) -> Result<i64> {
-        let res = sqlx::query(
-            "INSERT INTO feature (group_id, name, value_type, description) VALUES (?, ?, ?, ?)",
-        )
-        .bind(opt.group_id)
-        .bind(&opt.feature_name)
-        .bind(opt.value_type)
-        .bind(opt.description)
-        .execute(&self.pool)
+    let res = sqlx::query("INSERT INTO entity (name, description) VALUES (?, ?)")
+        .bind(name)
+        .bind(description)
+        .execute(&mut *conn)
         .await;
 
-        match res {
-            Err(sqlx::Error::Database(e)) => {
-                if e.message()
-                    == format!("UNIQUE constraint failed: feature.group_id, feature.name")
-                {
-                    Err(Error::ColumnAlreadyExist(opt.feature_name))
-                } else {
-                    println!("{}", e.message());
-                    Err(e.into())
-                }
+    match res {
+        Err(sqlx::Error::Database(e)) => {
+            if e.message() == "UNIQUE constraint failed: entity.name" {
+                Err(Error::ColumnAlreadyExist(name.to_string()))
+            } else {
+                Err(e.into())
             }
-            _ => Ok(res?.last_insert_rowid()),
         }
+        _ => Ok(res?.last_insert_rowid()),
     }
+}
 
-    async fn update_feature(&self, id: i64, new_description: &str) -> Result<()> {
-        let rows_affected = sqlx::query("UPDATE feature  SET description = ? WHERE id = ?")
-            .bind(new_description)
-            .bind(id)
-            .execute(&self.pool)
-            .await?
-            .rows_affected();
+async fn update_entity<'a, A>(conn: A, id: i64, new_description: &str) -> Result<()>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+    let rows_affected = sqlx::query("UPDATE entity SET description = ? WHERE id = ?")
+        .bind(new_description)
+        .bind(id)
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
 
-        if rows_affected != 1 {
-            Err(Error::ColumnNotFound("feature".to_owned(), id.to_string()))
-        } else {
-            Ok(())
+    if rows_affected != 1 {
+        Err(Error::ColumnNotFound("entity".to_owned(), id.to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+async fn get_entity<'a, A>(conn: A, opt: types::GetOpt) -> Result<Option<types::Entity>>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+
+    let query = match opt {
+        types::GetOpt::ID(id) => sqlx::query_as("SELECT * FROM entity WHERE id = ?").bind(id),
+        types::GetOpt::Name(name) => {
+            sqlx::query_as("SELECT * FROM entity WHERE name = ?").bind(name)
         }
-    }
+    };
 
-    async fn get_feature(&self, opt: types::GetOpt) -> Result<Option<Feature>> {
-        let query = match opt {
-            types::GetOpt::ID(id) => sqlx::query_as("SELECT * FROM feature WHERE id = ?").bind(id),
-            types::GetOpt::Name(name) => {
-                sqlx::query_as("SELECT * FROM feature WHERE name = ?").bind(name)
+    Ok(query.fetch_optional(&mut *conn).await?)
+}
+
+async fn list_entity<'a, A>(conn: A, opt: types::ListOpt) -> Result<Vec<types::Entity>>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+
+    let mut query_str = "SELECT * FROM entity".to_owned();
+
+    let query = match opt {
+        types::ListOpt::All => sqlx::query(&query_str),
+        types::ListOpt::IDs(ids) => {
+            if ids.is_empty() {
+                return Ok(Vec::new());
             }
-        };
 
-        Ok(query.fetch_optional(&self.pool).await?)
-    }
-
-    async fn list_feature(&self, opt: ListOpt) -> Result<Vec<Feature>> {
-        let mut query_str = "SELECT * FROM feature".to_owned();
-
-        let query = match opt {
-            ListOpt::All => sqlx::query(&query_str),
-            ListOpt::IDs(ids) => {
-                if ids.len() == 0 {
-                    return Ok(Vec::new());
-                }
-
-                query_str = format!("{query_str} WHERE id in (?{})", ", ?".repeat(ids.len() - 1));
-
-                let mut query = sqlx::query(&query_str);
-                for id in ids {
-                    query = query.bind(id);
-                }
-                query
+            query_str = format!("{query_str} WHERE id in (?{})", ", ?".repeat(ids.len() - 1));
+            let mut query = sqlx::query(&query_str);
+            for id in ids {
+                query = query.bind(id);
             }
-        };
+            query
+        }
+    };
 
-        let res = query
-            .fetch_all(&self.pool)
-            .await?
-            .iter()
-            .map(|row| Feature::from_row(row))
-            .collect::<std::result::Result<Vec<Feature>, sqlx::Error>>();
+    let res = query
+        .fetch_all(&mut *conn)
+        .await?
+        .iter()
+        .map(types::Entity::from_row)
+        .collect::<std::result::Result<Vec<types::Entity>, sqlx::Error>>();
 
-        res.or_else(|e| Err(e.into()))
+    res.map_err(|e| e.into())
+}
+
+async fn create_group<'a, A>(conn: A, group: types::CreateGroupOpt) -> Result<i64>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+
+    let res = sqlx::query(
+        "INSERT INTO feature_group (name, category, description, entity_id) VALUES (?, ?, ?, ?)",
+    )
+    .bind(&group.name)
+    .bind(group.category)
+    .bind(group.description)
+    .bind(group.entity_id)
+    .execute(&mut *conn)
+    .await;
+
+    match res {
+        Err(sqlx::Error::Database(e)) => {
+            if e.message() == "UNIQUE constraint failed: feature_group.name" {
+                Err(Error::ColumnAlreadyExist(group.name))
+            } else {
+                Err(e.into())
+            }
+        }
+        _ => Ok(res?.last_insert_rowid()),
     }
+}
+
+async fn update_group<'a, A>(conn: A, id: i64, new_description: &str) -> Result<()>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+
+    let rows_affected = sqlx::query("UPDATE feature_group SET description = ? WHERE id = ?")
+        .bind(new_description)
+        .bind(id)
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
+
+    if rows_affected != 1 {
+        Err(Error::ColumnNotFound(
+            "feature_group".to_owned(),
+            id.to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+async fn get_group<'a, A>(conn: A, opt: types::GetOpt) -> Result<Option<types::Group>>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+
+    let query = match opt {
+        types::GetOpt::ID(id) => {
+            sqlx::query_as("SELECT * FROM feature_group WHERE id = ?").bind(id)
+        }
+        types::GetOpt::Name(name) => {
+            sqlx::query_as("SELECT * FROM feature_group WHERE name = ?").bind(name)
+        }
+    };
+
+    Ok(query.fetch_optional(&mut *conn).await?)
+}
+
+async fn list_group<'a, A>(conn: A, opt: types::ListOpt) -> Result<Vec<types::Group>>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+
+    let mut query_str = "SELECT * FROM feature_group".to_owned();
+
+    let query = match opt {
+        types::ListOpt::All => sqlx::query(&query_str),
+        types::ListOpt::IDs(ids) => {
+            if ids.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            query_str = format!("{query_str} WHERE id in (?{})", ", ?".repeat(ids.len() - 1));
+            let mut query = sqlx::query(&query_str);
+            for id in ids {
+                query = query.bind(id);
+            }
+            query
+        }
+    };
+
+    let res = query
+        .fetch_all(&mut *conn)
+        .await?
+        .iter()
+        .map(types::Group::from_row)
+        .collect::<std::result::Result<Vec<types::Group>, sqlx::Error>>();
+
+    res.map_err(|e| e.into())
+}
+
+async fn create_feature<'a, A>(conn: A, opt: types::CreateFeatureOpt) -> Result<i64>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+    let res = sqlx::query(
+        "INSERT INTO feature (group_id, name, value_type, description) VALUES (?, ?, ?, ?)",
+    )
+    .bind(opt.group_id)
+    .bind(&opt.feature_name)
+    .bind(opt.value_type)
+    .bind(opt.description)
+    .execute(&mut *conn)
+    .await;
+
+    match res {
+        Err(sqlx::Error::Database(e)) => {
+            if e.message() == "UNIQUE constraint failed: feature.group_id, feature.name" {
+                Err(Error::ColumnAlreadyExist(opt.feature_name))
+            } else {
+                println!("{}", e.message());
+                Err(e.into())
+            }
+        }
+        _ => Ok(res?.last_insert_rowid()),
+    }
+}
+
+async fn update_feature<'a, A>(conn: A, id: i64, new_description: &str) -> Result<()>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+
+    let rows_affected = sqlx::query("UPDATE feature  SET description = ? WHERE id = ?")
+        .bind(new_description)
+        .bind(id)
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
+
+    if rows_affected != 1 {
+        Err(Error::ColumnNotFound("feature".to_owned(), id.to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+async fn get_feature<'a, A>(conn: A, opt: types::GetOpt) -> Result<Option<Feature>>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+
+    let query = match opt {
+        types::GetOpt::ID(id) => sqlx::query_as("SELECT * FROM feature WHERE id = ?").bind(id),
+        types::GetOpt::Name(name) => {
+            sqlx::query_as("SELECT * FROM feature WHERE name = ?").bind(name)
+        }
+    };
+
+    Ok(query.fetch_optional(&mut *conn).await?)
+}
+
+async fn list_feature<'a, A>(conn: A, opt: ListOpt) -> Result<Vec<Feature>>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+
+    let mut query_str = "SELECT * FROM feature".to_owned();
+
+    let query = match opt {
+        ListOpt::All => sqlx::query(&query_str),
+        ListOpt::IDs(ids) => {
+            if ids.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            query_str = format!("{query_str} WHERE id in (?{})", ", ?".repeat(ids.len() - 1));
+
+            let mut query = sqlx::query(&query_str);
+            for id in ids {
+                query = query.bind(id);
+            }
+            query
+        }
+    };
+
+    let res = query
+        .fetch_all(&mut *conn)
+        .await?
+        .iter()
+        .map(Feature::from_row)
+        .collect::<std::result::Result<Vec<Feature>, sqlx::Error>>();
+
+    res.map_err(|e| e.into())
 }
 
 #[cfg(test)]
 mod tests {
     use sqlx::SqlitePool;
 
+    use crate::database::metadata::sqlite::DB;
     use crate::database::metadata::types::FeatureValueType;
     use crate::database::{error::Error, metadata::types::Category};
 
@@ -314,40 +509,33 @@ mod tests {
 
     async fn prepare_db(pool: SqlitePool) -> DB {
         let db = DB::from_pool(pool);
-        db.create_database().await;
+        db.create_schemas().await;
         db
     }
 
     #[sqlx::test]
-    fn create_entity(pool: SqlitePool) {
+    async fn create_entity(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        let res: Result<i64> = db.create_entity("user", "description").await;
+        let res: Result<i64> = super::create_entity(&db.pool, "user", "description").await;
         assert!(res.is_ok() && res.unwrap() == 1);
 
-        let res: Result<i64> = db.create_entity("user", "description").await;
-        assert_eq!(
-            match res.err() {
-                Some(Error::ColumnAlreadyExist(name)) => name == "user",
-                _ => false,
-            },
-            true
-        );
+        let res: Result<i64> = super::create_entity(&db.pool, "user", "description").await;
+        assert!(match res.err() {
+            Some(Error::ColumnAlreadyExist(name)) => name == "user",
+            _ => false,
+        });
     }
 
     #[sqlx::test]
-    fn get_entity(pool: SqlitePool) {
+    async fn get_entity(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        let id = db.create_entity("name", "description").await.unwrap();
+        let id = super::create_entity(&db.pool, "name", "description")
+            .await
+            .unwrap();
 
-        let entity = db.get_entity(GetOpt::ID(id)).await.unwrap().unwrap();
-        assert_eq!(entity.id, id);
-        assert_eq!(entity.name, "name");
-        assert_eq!(entity.description, "description");
-
-        let entity = db
-            .get_entity(GetOpt::Name("name".to_owned()))
+        let entity = super::get_entity(&db.pool, GetOpt::ID(id))
             .await
             .unwrap()
             .unwrap();
@@ -355,103 +543,133 @@ mod tests {
         assert_eq!(entity.name, "name");
         assert_eq!(entity.description, "description");
 
-        let res = db
-            .get_entity(GetOpt::Name("not_exist".to_owned()))
+        let entity = super::get_entity(&db.pool, GetOpt::Name("name".to_owned()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(entity.id, id);
+        assert_eq!(entity.name, "name");
+        assert_eq!(entity.description, "description");
+
+        let res = super::get_entity(&db.pool, GetOpt::Name("not_exist".to_owned()))
             .await
             .unwrap();
         assert!(res.is_none());
 
-        let res = db.get_entity(GetOpt::ID(id + 1)).await.unwrap();
+        let res = super::get_entity(&db.pool, GetOpt::ID(id + 1))
+            .await
+            .unwrap();
         assert!(res.is_none());
     }
 
     #[sqlx::test]
-    fn update_entity(pool: SqlitePool) {
+    async fn update_entity(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        let id = db.create_entity("name", "description").await.unwrap();
+        let id = super::create_entity(&db.pool, "name", "description")
+            .await
+            .unwrap();
 
-        assert!(db.update_entity(id, "new_description").await.is_ok());
+        assert!(super::update_entity(&db.pool, id, "new_description")
+            .await
+            .is_ok());
 
-        let entity = db.get_entity(GetOpt::ID(id)).await.unwrap().unwrap();
+        let entity = super::get_entity(&db.pool, GetOpt::ID(id))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(entity.id, id);
         assert_eq!(entity.name, "name");
         assert_eq!(entity.description, "new_description");
 
-        assert_eq!(
-            db.update_entity(id + 1, "new_description")
-                .await
-                .is_err_and(|e| match e {
-                    Error::ColumnNotFound(table, id) => table == "entity" && id == "2",
-                    _ => false,
-                }),
-            true
-        );
+        assert!(super::update_entity(&db.pool, id + 1, "new_description")
+            .await
+            .is_err_and(|e| match e {
+                Error::ColumnNotFound(table, id) => table == "entity" && id == "2",
+                _ => false,
+            }));
     }
 
     #[sqlx::test]
-    fn list_entity(pool: SqlitePool) {
+    async fn list_entity(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        let entitys = db.list_entity(ListOpt::All).await.unwrap();
-        assert_eq!(entitys.len(), 0);
+        let entities = super::list_entity(&db.pool, ListOpt::All).await.unwrap();
+        assert_eq!(entities.len(), 0);
 
-        assert!(db.create_entity("name", "description").await.is_ok());
-        let entitys = db.list_entity(ListOpt::All).await.unwrap();
-        assert_eq!(entitys.len(), 1);
+        assert!(super::create_entity(&db.pool, "name", "description")
+            .await
+            .is_ok());
+        let entities = super::list_entity(&db.pool, ListOpt::All).await.unwrap();
+        assert_eq!(entities.len(), 1);
 
-        assert!(db.create_entity("name2", "description").await.is_ok());
-        let entitys = db.list_entity(ListOpt::All).await.unwrap();
-        assert_eq!(entitys.len(), 2);
+        assert!(super::create_entity(&db.pool, "name2", "description")
+            .await
+            .is_ok());
+        let entities = super::list_entity(&db.pool, ListOpt::All).await.unwrap();
+        assert_eq!(entities.len(), 2);
 
-        assert!(db.create_entity("name3", "description").await.is_ok());
-        let entitys = db.list_entity(ListOpt::IDs(vec![1, 2])).await.unwrap();
-        assert_eq!(entitys.len(), 2);
-
-        let entitys = db
-            .list_entity(ListOpt::IDs(vec![1, 2, 3, 4]))
+        assert!(super::create_entity(&db.pool, "name3", "description")
+            .await
+            .is_ok());
+        let entities = super::list_entity(&db.pool, ListOpt::IDs(vec![1, 2]))
             .await
             .unwrap();
-        assert_eq!(entitys.len(), 3);
+        assert_eq!(entities.len(), 2);
 
-        let entitys = db.list_entity(ListOpt::IDs(Vec::new())).await.unwrap();
-        assert_eq!(entitys.len(), 0);
+        let entities = super::list_entity(&db.pool, ListOpt::IDs(vec![1, 2, 3, 4]))
+            .await
+            .unwrap();
+        assert_eq!(entities.len(), 3);
+
+        let entities = super::list_entity(&db.pool, ListOpt::IDs(Vec::new()))
+            .await
+            .unwrap();
+        assert_eq!(entities.len(), 0);
     }
 
     #[sqlx::test]
-    fn crate_group(pool: SqlitePool) {
+    async fn crate_group(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        let entity_id = db.create_entity("name", "description").await.unwrap();
+        let entity_id = super::create_entity(&db.pool, "name", "description")
+            .await
+            .unwrap();
 
-        let res = db
-            .create_group(CreateGroupOpt {
+        let res = super::create_group(
+            &db.pool,
+            CreateGroupOpt {
                 name: "name".to_owned(),
                 category: Category::Batch,
                 description: "description".to_owned(),
                 entity_id,
-            })
-            .await;
+            },
+        )
+        .await;
         assert!(res.is_ok_and(|id| id == 1));
 
-        let res = db
-            .create_group(CreateGroupOpt {
+        let res = super::create_group(
+            &db.pool,
+            CreateGroupOpt {
                 name: "name1".to_owned(),
                 category: Category::Stream,
                 description: "description".to_owned(),
                 entity_id,
-            })
-            .await;
+            },
+        )
+        .await;
         assert!(res.is_ok_and(|id| id == 2));
 
-        let res = db
-            .create_group(CreateGroupOpt {
+        let res = super::create_group(
+            &db.pool,
+            CreateGroupOpt {
                 name: "name".to_owned(),
                 category: Category::Batch,
                 description: "description".to_owned(),
                 entity_id,
-            })
-            .await;
+            },
+        )
+        .await;
 
         assert!(res.is_err_and(|e| match e {
             Error::ColumnAlreadyExist(name) => name == "name",
@@ -460,9 +678,11 @@ mod tests {
     }
 
     #[sqlx::test]
-    fn get_group(pool: SqlitePool) {
+    async fn get_group(pool: SqlitePool) {
         let db = prepare_db(pool).await;
-        let entity_id = db.create_entity("name", "description").await.unwrap();
+        let entity_id = super::create_entity(&db.pool, "name", "description")
+            .await
+            .unwrap();
 
         let group_zero = Group {
             id: 1,
@@ -472,22 +692,26 @@ mod tests {
             entity_id,
             ..Default::default()
         };
-        let id = db.create_group(group_zero.clone().into()).await.unwrap();
+        let id = super::create_group(&db.pool, group_zero.clone().into())
+            .await
+            .unwrap();
 
-        let group = db.get_group(GetOpt::ID(id)).await.unwrap().unwrap();
-        assert_eq_of_group(&group, &group_zero);
-
-        let group = db
-            .get_group(GetOpt::Name(group_zero.name.clone()))
+        let group = super::get_group(&db.pool, GetOpt::ID(id))
             .await
             .unwrap()
             .unwrap();
         assert_eq_of_group(&group, &group_zero);
 
-        let res = db.get_group(GetOpt::ID(id + 1)).await;
+        let group = super::get_group(&db.pool, GetOpt::Name(group_zero.name.clone()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq_of_group(&group, &group_zero);
+
+        let res = super::get_group(&db.pool, GetOpt::ID(id + 1)).await;
         assert!(res.is_ok_and(|res| res.is_none()));
 
-        let res = db.get_group(GetOpt::Name("not_exist".to_owned())).await;
+        let res = super::get_group(&db.pool, GetOpt::Name("not_exist".to_owned())).await;
         assert!(res.is_ok_and(|res| res.is_none()));
     }
 
@@ -499,17 +723,21 @@ mod tests {
     }
 
     #[sqlx::test]
-    fn update_group(pool: SqlitePool) {
+    async fn update_group(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        assert!(db.update_group(1, "new_description").await.is_err_and(|e| {
-            match e {
-                Error::ColumnNotFound(table, id) => table == "feature_group" && id == "1",
-                _ => false,
-            }
-        }));
+        assert!(super::update_group(&db.pool, 1, "new_description")
+            .await
+            .is_err_and(|e| {
+                match e {
+                    Error::ColumnNotFound(table, id) => table == "feature_group" && id == "1",
+                    _ => false,
+                }
+            }));
 
-        let entity_id = db.create_entity("name", "description").await.unwrap();
+        let entity_id = super::create_entity(&db.pool, "name", "description")
+            .await
+            .unwrap();
         let origin_group = Group {
             id: 1,
             name: "name".to_owned(),
@@ -518,9 +746,15 @@ mod tests {
             entity_id,
             ..Default::default()
         };
-        let group_id = db.create_group(origin_group.clone().into()).await.unwrap();
-        assert!(db.update_group(group_id, "new_description").await.is_ok());
-        let group = db.get_group(GetOpt::ID(group_id)).await.unwrap();
+        let group_id = super::create_group(&db.pool, origin_group.clone().into())
+            .await
+            .unwrap();
+        assert!(super::update_group(&db.pool, group_id, "new_description")
+            .await
+            .is_ok());
+        let group = super::get_group(&db.pool, GetOpt::ID(group_id))
+            .await
+            .unwrap();
         assert!(group.is_some_and(|g| {
             g.id == origin_group.id
                 && g.entity_id == origin_group.entity_id
@@ -531,144 +765,165 @@ mod tests {
     }
 
     #[sqlx::test]
-    fn list_group(pool: SqlitePool) {
+    async fn list_group(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        let entity_id = db.create_entity("entity", "description").await.unwrap();
+        let entity_id = super::create_entity(&db.pool, "entity", "description")
+            .await
+            .unwrap();
 
-        let groups = db.list_group(ListOpt::All).await.unwrap();
+        let groups = super::list_group(&db.pool, ListOpt::All).await.unwrap();
         assert_eq!(groups.len(), 0);
 
-        assert!(db
-            .create_group(CreateGroupOpt {
-                entity_id: entity_id,
+        assert!(super::create_group(
+            &db.pool,
+            CreateGroupOpt {
+                entity_id,
                 name: "name1".to_owned(),
                 category: Category::Batch,
                 description: "description".to_owned()
-            })
-            .await
-            .is_ok());
-        let groups = db.list_group(ListOpt::All).await.unwrap();
+            }
+        )
+        .await
+        .is_ok());
+        let groups = super::list_group(&db.pool, ListOpt::All).await.unwrap();
         assert_eq!(groups.len(), 1);
 
-        assert!(db
-            .create_group(CreateGroupOpt {
-                entity_id: entity_id,
+        assert!(super::create_group(
+            &db.pool,
+            CreateGroupOpt {
+                entity_id,
                 name: "name2".to_owned(),
                 category: Category::Batch,
                 description: "description".to_owned()
-            })
-            .await
-            .is_ok());
-        let groups = db.list_group(ListOpt::All).await.unwrap();
+            }
+        )
+        .await
+        .is_ok());
+        let groups = super::list_group(&db.pool, ListOpt::All).await.unwrap();
         assert_eq!(groups.len(), 2);
 
-        let group = db.list_group(ListOpt::IDs(vec![1, 2, 3])).await.unwrap();
+        let group = super::list_group(&db.pool, ListOpt::IDs(vec![1, 2, 3]))
+            .await
+            .unwrap();
         assert_eq!(group.len(), 2);
     }
 
     #[sqlx::test]
-    fn create_feature(pool: SqlitePool) {
+    async fn create_feature(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        let entity_id = db.create_entity("name", "description").await.unwrap();
-        let group_id = db
-            .create_group(CreateGroupOpt {
+        let entity_id = super::create_entity(&db.pool, "name", "description")
+            .await
+            .unwrap();
+        let group_id = super::create_group(
+            &db.pool,
+            CreateGroupOpt {
                 entity_id,
                 category: Category::Batch,
                 name: "group_name".to_owned(),
                 description: "description".to_owned(),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
-        let res = db
-            .create_feature(CreateFeatureOpt {
+        let res = super::create_feature(
+            &db.pool,
+            CreateFeatureOpt {
                 group_id,
                 feature_name: "feature_name".to_owned(),
                 description: "description".to_owned(),
                 value_type: FeatureValueType::Float64,
-            })
-            .await;
+            },
+        )
+        .await;
         assert!(res.is_ok_and(|id| id == 1));
 
-        let res = db
-            .create_feature(CreateFeatureOpt {
+        let res = super::create_feature(
+            &db.pool,
+            CreateFeatureOpt {
                 group_id,
                 feature_name: "feature_name2".to_owned(),
                 description: "description".to_owned(),
                 value_type: FeatureValueType::Float64,
-            })
-            .await;
+            },
+        )
+        .await;
         assert!(res.is_ok_and(|id| id == 2));
 
-        let res = db
-            .create_feature(CreateFeatureOpt {
+        let res = super::create_feature(
+            &db.pool,
+            CreateFeatureOpt {
                 group_id,
                 feature_name: "feature_name".to_owned(),
                 description: "description".to_owned(),
                 value_type: FeatureValueType::Float64,
-            })
-            .await;
+            },
+        )
+        .await;
 
         assert!(res.is_err_and(|e| match e {
-            Error::ColumnAlreadyExist(name) => name == format!("feature_name"),
+            Error::ColumnAlreadyExist(name) => name == "feature_name",
             _ => false,
         }));
 
-        let new_group_id = db
-            .create_group(CreateGroupOpt {
+        let new_group_id = super::create_group(
+            &db.pool,
+            CreateGroupOpt {
                 entity_id,
                 category: Category::Batch,
                 name: "new_group_name".to_owned(),
                 description: "description".to_owned(),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
-        let res = db
-            .create_feature(CreateFeatureOpt {
+        let res = super::create_feature(
+            &db.pool,
+            CreateFeatureOpt {
                 group_id: new_group_id,
                 feature_name: "feature_name".to_owned(),
                 description: "description".to_owned(),
                 value_type: FeatureValueType::Float64,
-            })
-            .await;
+            },
+        )
+        .await;
         assert!(res.is_ok_and(|id| id == 3));
     }
 
     #[sqlx::test]
-    fn get_feature(pool: SqlitePool) {
+    async fn get_feature(pool: SqlitePool) {
         let db = prepare_db(pool).await;
-        let entity_id = db.create_entity("name", "description").await.unwrap();
-        let group_id = db
-            .create_group(CreateGroupOpt {
+        let entity_id = super::create_entity(&db.pool, "name", "description")
+            .await
+            .unwrap();
+        let group_id = super::create_group(
+            &db.pool,
+            CreateGroupOpt {
                 entity_id,
                 category: Category::Batch,
                 name: "new_group_name".to_owned(),
                 description: "description".to_owned(),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
-        let id = db
-            .create_feature(CreateFeatureOpt {
+        let id = super::create_feature(
+            &db.pool,
+            CreateFeatureOpt {
                 group_id,
                 feature_name: "feature".to_owned(),
                 description: "description".to_owned(),
                 value_type: FeatureValueType::Float64,
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
-        let feature = db.get_feature(GetOpt::ID(id)).await.unwrap().unwrap();
-        assert_eq!(feature.id, 1);
-        assert_eq!(feature.name, "feature".to_owned());
-        assert_eq!(feature.group_id, group_id);
-        assert_eq!(feature.description, "description".to_owned());
-
-        let feature = db
-            .get_feature(GetOpt::Name("feature".to_owned()))
+        let feature = super::get_feature(&db.pool, GetOpt::ID(id))
             .await
             .unwrap()
             .unwrap();
@@ -677,110 +932,182 @@ mod tests {
         assert_eq!(feature.group_id, group_id);
         assert_eq!(feature.description, "description".to_owned());
 
-        let res = db.get_feature(GetOpt::ID(id + 1)).await;
+        let feature = super::get_feature(&db.pool, GetOpt::Name("feature".to_owned()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(feature.id, 1);
+        assert_eq!(feature.name, "feature".to_owned());
+        assert_eq!(feature.group_id, group_id);
+        assert_eq!(feature.description, "description".to_owned());
+
+        let res = super::get_feature(&db.pool, GetOpt::ID(id + 1)).await;
         assert!(res.is_ok_and(|res| res.is_none()));
     }
 
     #[sqlx::test]
-    fn update_feature(pool: SqlitePool) {
+    async fn update_feature(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        assert!(db
-            .update_feature(1, "new_description")
+        assert!(super::update_feature(&db.pool, 1, "new_description")
             .await
             .is_err_and(|e| match e {
                 Error::ColumnNotFound(table, id) => table == "feature" && id == "1",
                 _ => false,
             }));
 
-        let entity_id = db.create_entity("name", "description").await.unwrap();
-        let group_id = db
-            .create_group(CreateGroupOpt {
+        let entity_id = super::create_entity(&db.pool, "name", "description")
+            .await
+            .unwrap();
+        let group_id = super::create_group(
+            &db.pool,
+            CreateGroupOpt {
                 entity_id,
                 category: Category::Batch,
                 name: "name".to_owned(),
                 description: "description".to_owned(),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
-        let feature_id = db
-            .create_feature(CreateFeatureOpt {
+        let feature_id = super::create_feature(
+            &db.pool,
+            CreateFeatureOpt {
                 group_id,
                 feature_name: "feature_nam".to_owned(),
                 description: "description".to_owned(),
                 value_type: FeatureValueType::Float64,
-            })
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            super::update_feature(&db.pool, feature_id, "new_description")
+                .await
+                .is_ok()
+        );
+
+        let feature = super::get_feature(&db.pool, GetOpt::ID(feature_id))
             .await
             .unwrap();
-
-        assert!(db
-            .update_feature(feature_id, "new_description")
-            .await
-            .is_ok());
-
-        let feature = db.get_feature(GetOpt::ID(feature_id)).await.unwrap();
         assert!(feature.is_some_and(|f| {
             f.id == feature_id
                 && f.group_id == group_id
-                && f.description == "new_description".to_owned()
+                && f.description == "new_description"
                 && f.value_type == FeatureValueType::Float64
         }));
     }
 
     #[sqlx::test]
-    fn list_feature(pool: SqlitePool) {
+    async fn list_feature(pool: SqlitePool) {
         let db = prepare_db(pool).await;
 
-        assert!(db
-            .update_feature(1, "new_description")
+        assert!(super::update_feature(&db.pool, 1, "new_description")
             .await
             .is_err_and(|e| match e {
                 Error::ColumnNotFound(table, id) => table == "feature" && id == "1",
                 _ => false,
             }));
 
-        let entity_id = db.create_entity("name", "description").await.unwrap();
-        let group_id = db
-            .create_group(CreateGroupOpt {
+        let entity_id = super::create_entity(&db.pool, "name", "description")
+            .await
+            .unwrap();
+        let group_id = super::create_group(
+            &db.pool,
+            CreateGroupOpt {
                 entity_id,
                 category: Category::Batch,
                 name: "name".to_owned(),
                 description: "description".to_owned(),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
-        let features = db.list_feature(ListOpt::All).await.unwrap();
+        let features = super::list_feature(&db.pool, ListOpt::All).await.unwrap();
         assert_eq!(features.len(), 0);
 
-        assert!(db
-            .create_feature(CreateFeatureOpt {
+        assert!(super::create_feature(
+            &db.pool,
+            CreateFeatureOpt {
                 group_id,
                 feature_name: "feature_name".to_owned(),
                 description: "description".to_owned(),
                 value_type: FeatureValueType::Float64,
-            })
-            .await
-            .is_ok());
+            }
+        )
+        .await
+        .is_ok());
 
-        let features = db.list_feature(ListOpt::All).await.unwrap();
+        let features = super::list_feature(&db.pool, ListOpt::All).await.unwrap();
         assert_eq!(features.len(), 1);
 
-        assert!(db
-            .create_feature(CreateFeatureOpt {
+        assert!(super::create_feature(
+            &db.pool,
+            CreateFeatureOpt {
                 group_id,
                 feature_name: "feature_name2".to_owned(),
                 description: "description".to_owned(),
                 value_type: FeatureValueType::Float64,
-            })
-            .await
-            .is_ok());
+            }
+        )
+        .await
+        .is_ok());
 
-        let features = db.list_feature(ListOpt::All).await.unwrap();
+        let features = super::list_feature(&db.pool, ListOpt::All).await.unwrap();
         assert_eq!(features.len(), 2);
 
-        let features = db.list_feature(ListOpt::IDs(vec![1, 2, 3])).await.unwrap();
+        let features = super::list_feature(&db.pool, ListOpt::IDs(vec![1, 2, 3]))
+            .await
+            .unwrap();
         assert_eq!(features.len(), 2);
     }
 }
+
+// async fn run_query<'a, A>(conn: A) -> Result<()>
+//     where
+//         A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+// {
+//     let mut conn = conn.acquire().await?;
+//
+//     sqlx::query("SELECT 1 as v").fetch_one(&mut *conn).await?;
+//     sqlx::query("SELECT 2 as v").fetch_one(&mut *conn).await?;
+//
+//     Ok(())
+// }
+// #[async_trait]
+// impl TransactionSession for Transaction<'static, Sqlite> {
+//     async fn create_entity(&mut self) {
+//         create_entity2(&mut self, "a", "b").await.unwrap();
+//     }
+// }
+//
+// async fn demon1(pool: &sqlx::SqlitePool) {
+//     let mut conn = pool.acquire().await.unwrap();
+//     create_entity2(&mut conn, "a", "b").await;
+// }
+//
+// async fn demon2<'a>(conn: &mut Transaction<'a, Sqlite>) {
+//     create_entity2(conn, "a", "b").await;
+// }
+//
+// async fn create_entity2(conn: &mut SqliteConnection, name: &str, description: &str) -> Result<i64> {
+//     let res = sqlx::query("INSERT INTO entity (name, description) VALUES (?, ?)")
+//         .bind(name)
+//         .bind(description)
+//         .execute(&mut *conn)
+//         .await;
+//
+//     match res {
+//         Err(sqlx::Error::Database(e)) => {
+//             if e.message() == "UNIQUE constraint failed: entity.name" {
+//                 Err(Error::ColumnAlreadyExist(name.to_string()))
+//             } else {
+//                 Err(e.into())
+//             }
+//         }
+//         _ => Ok(res?.last_insert_rowid()),
+//     }
+// }

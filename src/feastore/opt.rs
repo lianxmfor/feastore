@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::database::SQLiteOpt;
 
 #[derive(Serialize, Deserialize)]
-pub struct FeastoreConfig {
+pub struct FeaStoreConfig {
     pub metadata: BackendOpt,
 }
 

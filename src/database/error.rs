@@ -13,4 +13,7 @@ pub enum Error {
 
     #[error("database error")]
     DatabaseError(#[from] Box<dyn DatabaseError>),
+
+    #[error("{0}")]
+    Other(String),
 }

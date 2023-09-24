@@ -1,8 +1,8 @@
-mod apply;
+//mod apply;
 mod get;
 
 use clap::{Parser, Subcommand};
-use feastore::{opt::FeastoreConfig, FeaStore};
+use feastore::{opt::FeaStoreConfig, FeaStore};
 use get::GetCommands;
 
 #[derive(Parser)]
@@ -16,7 +16,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Apply(apply::Cmd),
+    //Apply(apply::Cmd),
     Edit(GetCommands),
     Register(GetCommands),
     Get(GetCommands),
@@ -28,7 +28,7 @@ impl Cli {
         let feastore = FeaStore::open(cfg).await;
 
         match &self.command {
-            Commands::Apply(cmd) => cmd.execute(feastore),
+            //Commands::Apply(cmd) => cmd.execute(feastore),
             Commands::Edit(cmd) => cmd.execute(feastore),
             Commands::Register(cmd) => cmd.execute(feastore),
             Commands::Get(cmd) => cmd.execute(feastore),
@@ -37,7 +37,7 @@ impl Cli {
 }
 
 impl Cli {
-    fn init_config(&self) -> FeastoreConfig {
+    fn init_config(&self) -> FeaStoreConfig {
         let config: String = if let Some(cfg) = &self.config {
             cfg.to_owned()
         } else if let Ok(cfg) = std::env::var("FEASTORE_CONFIG") {
