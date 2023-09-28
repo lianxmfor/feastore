@@ -1,5 +1,5 @@
 use super::FeaStore;
-use crate::database::metadata::types::{Entity, ListOpt};
+use crate::database::metadata::types::{Entity, Feature, GetOpt, Group, ListOpt};
 use crate::database::Result;
 
 impl FeaStore {
@@ -13,5 +13,17 @@ impl FeaStore {
 
     pub async fn list_entity(&self, opt: ListOpt) -> Result<Vec<Entity>> {
         self.metadata.list_entity(opt).await
+    }
+
+    pub async fn get_entity(&self, opt: GetOpt) -> Result<Option<Entity>> {
+        self.metadata.get_entity(opt).await
+    }
+
+    pub async fn get_group(&self, opt: GetOpt) -> Result<Option<Group>> {
+        self.metadata.get_group(opt).await
+    }
+
+    pub async fn get_feature(&self, opt: GetOpt) -> Result<Option<Feature>> {
+        self.metadata.get_feature(opt).await
     }
 }

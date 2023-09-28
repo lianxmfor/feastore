@@ -9,8 +9,7 @@ use std::time::Duration;
 
 use crate::database::error::Error;
 use crate::database::metadata::types::{Category, FeatureValueType};
-
-use crate::FeaStore;
+use crate::feastore::FeaStore;
 
 impl FeaStore {
     pub async fn apply<R: std::io::Read>(&self, opt: ApplyOpt<R>) -> Result<(), Error> {
@@ -92,20 +91,12 @@ impl ApplyStage {
                             stage.merge(Self::from_group(group));
                         }
                     }
-                    Some("Feature") => {
+                    Some("Feature") | Some("Features") => {
                         let mut features: HashMap<String, Vec<Feature>> =
                             yaml::from_value(value).expect("Unable to parse");
 
-                        for feature in features.remove(items).unwrap_or_default() {
-                            stage.merge(Self::from_feature(feature));
-                        }
-                    }
-                    Some("Features") => {
-                        let mut features: HashMap<String, Vec<Feature>> =
-                            yaml::from_value(value).expect("Unable to parse");
-
-                        for feature in features.remove(items).unwrap_or_default() {
-                            stage.merge(Self::from_feature(feature));
+                        for f in features.remove(items).unwrap_or_default() {
+                            stage.merge(Self::from_feature(f));
                         }
                     }
                     Some(kind) => return Err(format!("invalid kind '{}'", kind)),
@@ -123,13 +114,11 @@ impl ApplyStage {
         let mut stage = ApplyStage::empty();
 
         stage.new_entities.push(entity.flat());
-        for group in entity.groups.unwrap_or_default() {
-            stage.new_groups.push(group.flat(Some(entity.name.clone())));
+        for g in entity.groups.unwrap_or_default() {
+            stage.new_groups.push(g.flat(Some(entity.name.clone())));
 
-            for feature in group.features.unwrap_or_default() {
-                stage
-                    .new_features
-                    .push(feature.fill(Some(group.name.clone())));
+            for feature in g.features.unwrap_or_default() {
+                stage.new_features.push(feature.fill(Some(g.name.clone())));
             }
         }
 
@@ -143,10 +132,8 @@ impl ApplyStage {
             .new_groups
             .push(group.flat(group.entity_name.to_owned()));
 
-        for feature in group.features.unwrap_or_default() {
-            stage
-                .new_features
-                .push(feature.fill(Some(group.name.to_owned())));
+        for f in group.features.unwrap_or_default() {
+            stage.new_features.push(f.fill(Some(group.name.to_owned())));
         }
 
         stage
@@ -200,6 +187,7 @@ pub struct Group {
     pub entity_name: Option<String>,
     pub category: Category,
     #[serde(rename(serialize = "snapshot-interval", deserialize = "snapshot-interval"))]
+    // TODO: instead serde_as with github.com/jean-airoldie/humantime-serde
     #[serde_as(as = "Option<DurationSeconds>")]
     snapshot_interval: Option<Duration>,
     pub description: String,

@@ -1,9 +1,8 @@
-//mod apply;
+mod apply;
 mod get;
 
 use clap::{Parser, Subcommand};
 use feastore::{opt::FeaStoreConfig, FeaStore};
-use get::GetCommands;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -16,10 +15,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    //Apply(apply::Cmd),
-    Edit(GetCommands),
-    Register(GetCommands),
-    Get(GetCommands),
+    /// Apply a change
+    Apply(apply::Command),
+    Edit(get::Command),
+    Register(get::Command),
+    /// Get Resources
+    Get(get::Command),
 }
 
 impl Cli {
@@ -28,10 +29,10 @@ impl Cli {
         let feastore = FeaStore::open(cfg).await;
 
         match &self.command {
-            //Commands::Apply(cmd) => cmd.execute(feastore),
-            Commands::Edit(cmd) => cmd.execute(feastore),
-            Commands::Register(cmd) => cmd.execute(feastore),
-            Commands::Get(cmd) => cmd.execute(feastore),
+            Commands::Apply(cmd) => cmd.execute(feastore).await,
+            Commands::Edit(cmd) => cmd.execute(feastore).await,
+            Commands::Register(cmd) => cmd.execute(feastore).await,
+            Commands::Get(cmd) => cmd.execute(feastore).await,
         }
     }
 }
