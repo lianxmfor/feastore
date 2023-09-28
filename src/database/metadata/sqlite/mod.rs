@@ -3,12 +3,9 @@ pub mod schema;
 
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 
-use crate::database::{
-    error::Error,
-    metadata::types::{self, *},
-    Result, SQLiteOpt,
-};
-
+use crate::database::error::Error;
+use crate::database::metadata::types::{self, *};
+use crate::database::{Result, SQLiteOpt};
 use crate::feastore::apply::ApplyStage;
 use schema::{META_TABLE_SCHEMAS, META_VIEW_SCHEMAS};
 
@@ -37,7 +34,7 @@ impl DB {
             sqlx::query(&table_schema)
                 .execute(&self.pool)
                 .await
-                .unwrap();
+                .expect(format!("create schemai {} failed!", table_schema).as_str());
         }
 
         for view_schema in META_VIEW_SCHEMAS.values() {
@@ -48,7 +45,7 @@ impl DB {
             //TODO: use template engine instead {}
             let trigger = format!(
                 r"
-                    CREATE TRIGGER {table}_update_modify_time
+                    CREATE TRIGGER IF NOT EXISTS {table}_update_modify_time
                     AFTER UPDATE ON {table}
                     BEGIN
                         update {table} SET modify_time = datetime('now') WHERE id = NEW.id;
@@ -57,9 +54,7 @@ impl DB {
             sqlx::query(&trigger).execute(&self.pool).await.unwrap();
         }
     }
-}
 
-impl DB {
     pub(crate) async fn close(&self) {
         self.pool.close().await;
     }
@@ -112,83 +107,77 @@ impl DB {
     pub(crate) async fn apply(&self, stage: ApplyStage) -> Result<()> {
         let mut tx = self.pool.begin().await?;
 
-        for new_entity in stage.new_entities {
-            let entity = get_entity(&mut tx, GetOpt::Name(new_entity.name.clone())).await?;
-            match entity {
+        for ne in stage.new_entities {
+            let e = get_entity(&mut tx, GetOpt::Name(ne.name.clone())).await?;
+            match e {
                 None => {
-                    create_entity(
-                        &mut tx,
-                        new_entity.name.as_str(),
-                        new_entity.description.as_str(),
-                    )
-                    .await?;
+                    create_entity(&mut tx, ne.name.as_str(), ne.description.as_str()).await?;
                 }
-                Some(entity) => {
-                    if entity.description != new_entity.description {
-                        update_entity(&mut tx, entity.id, new_entity.description.as_str()).await?;
+                Some(e) => {
+                    if e.description != ne.description {
+                        update_entity(&mut tx, e.id, ne.description.as_str()).await?;
                     }
                 }
             }
         }
 
-        for new_group in stage.new_groups {
-            let entity_name = if let Some(name) = new_group.entity_name {
-                name
+        for ng in stage.new_groups {
+            let entity_name = if let Some(n) = ng.entity_name {
+                n
             } else {
                 continue;
             };
 
-            let group = get_group(&mut tx, GetOpt::Name(new_group.name.clone())).await?;
-            match group {
+            let g = get_group(&mut tx, GetOpt::Name(ng.name.clone())).await?;
+            match g {
                 None => {
-                    if let Some(entity) = get_entity(&mut tx, GetOpt::Name(entity_name)).await? {
+                    if let Some(e) = get_entity(&mut tx, GetOpt::Name(entity_name)).await? {
                         create_group(
                             &mut tx,
                             CreateGroupOpt {
-                                entity_id: entity.id,
-                                name: new_group.name,
-                                category: new_group.category,
-                                description: new_group.description,
+                                entity_id: e.id,
+                                name: ng.name,
+                                category: ng.category,
+                                description: ng.description,
                             },
                         )
                         .await?;
                     }
                 }
-                Some(group) => {
-                    if group.description != new_group.description {
-                        update_group(&mut tx, group.id, new_group.description.as_str()).await?;
+                Some(g) => {
+                    if g.description != ng.description {
+                        update_group(&mut tx, g.id, ng.description.as_str()).await?;
                     }
                 }
             }
         }
 
-        for new_feature in stage.new_features {
-            let group_name = if let Some(name) = new_feature.group_name {
-                name
+        for nf in stage.new_features {
+            let group_name = if let Some(n) = nf.group_name {
+                n
             } else {
                 continue;
             };
 
-            let feature = get_feature(&mut tx, GetOpt::Name(new_feature.name.clone())).await?;
-            match feature {
+            let f = get_feature(&mut tx, GetOpt::Name(nf.name.clone())).await?;
+            match f {
                 None => {
-                    if let Some(group) = get_group(&mut tx, GetOpt::Name(group_name)).await? {
+                    if let Some(g) = get_group(&mut tx, GetOpt::Name(group_name)).await? {
                         create_feature(
                             &mut tx,
                             CreateFeatureOpt {
-                                group_id: group.id,
-                                feature_name: new_feature.name,
-                                description: new_feature.description,
-                                value_type: new_feature.value_type,
+                                group_id: g.id,
+                                feature_name: nf.name,
+                                description: nf.description,
+                                value_type: nf.value_type,
                             },
                         )
                         .await?;
                     }
                 }
                 Some(feature) => {
-                    if feature.description != new_feature.description {
-                        update_feature(&mut tx, feature.id, new_feature.description.as_str())
-                            .await?;
+                    if feature.description != nf.description {
+                        update_feature(&mut tx, feature.id, nf.description.as_str()).await?;
                     }
                 }
             }
@@ -1065,49 +1054,3 @@ mod tests {
         assert_eq!(features.len(), 2);
     }
 }
-
-// async fn run_query<'a, A>(conn: A) -> Result<()>
-//     where
-//         A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
-// {
-//     let mut conn = conn.acquire().await?;
-//
-//     sqlx::query("SELECT 1 as v").fetch_one(&mut *conn).await?;
-//     sqlx::query("SELECT 2 as v").fetch_one(&mut *conn).await?;
-//
-//     Ok(())
-// }
-// #[async_trait]
-// impl TransactionSession for Transaction<'static, Sqlite> {
-//     async fn create_entity(&mut self) {
-//         create_entity2(&mut self, "a", "b").await.unwrap();
-//     }
-// }
-//
-// async fn demon1(pool: &sqlx::SqlitePool) {
-//     let mut conn = pool.acquire().await.unwrap();
-//     create_entity2(&mut conn, "a", "b").await;
-// }
-//
-// async fn demon2<'a>(conn: &mut Transaction<'a, Sqlite>) {
-//     create_entity2(conn, "a", "b").await;
-// }
-//
-// async fn create_entity2(conn: &mut SqliteConnection, name: &str, description: &str) -> Result<i64> {
-//     let res = sqlx::query("INSERT INTO entity (name, description) VALUES (?, ?)")
-//         .bind(name)
-//         .bind(description)
-//         .execute(&mut *conn)
-//         .await;
-//
-//     match res {
-//         Err(sqlx::Error::Database(e)) => {
-//             if e.message() == "UNIQUE constraint failed: entity.name" {
-//                 Err(Error::ColumnAlreadyExist(name.to_string()))
-//             } else {
-//                 Err(e.into())
-//             }
-//         }
-//         _ => Ok(res?.last_insert_rowid()),
-//     }
-// }

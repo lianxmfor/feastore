@@ -2,7 +2,7 @@ use phf::phf_map;
 
 pub static META_TABLE_SCHEMAS: phf::Map<&'static str, &'static str> = phf_map! {
     "entity" => r#"
-        CREATE TABLE entity (
+        CREATE TABLE IF NOT EXISTS entity (
             id              INTEGER NOT     NULL PRIMARY KEY AUTOINCREMENT,
             name            VARCHAR(32)     NOT NULL,
             description     VARCHAR(64)     DEFAULT '',
@@ -12,7 +12,7 @@ pub static META_TABLE_SCHEMAS: phf::Map<&'static str, &'static str> = phf_map! {
         );
     "#,
     "feature_group" => r#"
-        CREATE TABLE feature_group (
+        CREATE TABLE IF NOT EXISTS feature_group (
             id              INTEGER         NOT NULL PRIMARY KEY AUTOINCREMENT,
             name            VARCHAR(32)     NOT NULL,
             category        VARCHAR(16)     NOT NULL,
@@ -25,7 +25,7 @@ pub static META_TABLE_SCHEMAS: phf::Map<&'static str, &'static str> = phf_map! {
         )
     "#,
     "feature" => r#"
-        CREATE TABLE feature (
+        CREATE TABLE IF NOT EXISTS feature (
             id              INTEGER         NOT NULL PRIMARY KEY AUTOINCREMENT,
             name            VARCHAR(32)     NOT NULL,
             group_id        INT             NOT NULL,
