@@ -4,7 +4,7 @@ pub mod schema;
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 
 use crate::database::error::Error;
-use crate::database::metadata::types::{self, *};
+use crate::database::metadata::{self, *};
 use crate::database::{Result, SQLiteOpt};
 use crate::feastore::apply::ApplyStage;
 use schema::{META_TABLE_SCHEMAS, META_VIEW_SCHEMAS};
@@ -234,15 +234,15 @@ where
     }
 }
 
-async fn get_entity<'a, A>(conn: A, opt: types::GetOpt) -> Result<Option<types::Entity>>
+async fn get_entity<'a, A>(conn: A, opt: GetOpt) -> Result<Option<Entity>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
     let mut conn = conn.acquire().await?;
 
     let query = match opt {
-        types::GetOpt::ID(id) => sqlx::query_as("SELECT * FROM entity WHERE id = ?").bind(id),
-        types::GetOpt::Name(name) => {
+        GetOpt::ID(id) => sqlx::query_as("SELECT * FROM entity WHERE id = ?").bind(id),
+        GetOpt::Name(name) => {
             sqlx::query_as("SELECT * FROM entity WHERE name = ?").bind(name)
         }
     };
@@ -250,7 +250,7 @@ where
     Ok(query.fetch_optional(&mut *conn).await?)
 }
 
-async fn list_entity<'a, A>(conn: A, opt: types::ListOpt) -> Result<Vec<types::Entity>>
+async fn list_entity<'a, A>(conn: A, opt: ListOpt) -> Result<Vec<Entity>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -259,8 +259,8 @@ where
     let mut query_str = "SELECT * FROM entity".to_owned();
 
     let query = match opt {
-        types::ListOpt::All => sqlx::query(&query_str),
-        types::ListOpt::IDs(ids) => {
+        ListOpt::All => sqlx::query(&query_str),
+        ListOpt::IDs(ids) => {
             if ids.is_empty() {
                 return Ok(Vec::new());
             }
@@ -272,19 +272,34 @@ where
             }
             query
         }
+        ListOpt::Names(names) => {
+            if names.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            query_str = format!(
+                "{query_str} WHERE name in (?{})",
+                ", ?".repeat(names.len() - 1)
+            );
+            let mut query = sqlx::query(&query_str);
+            for name in names {
+                query = query.bind(name);
+            }
+            query
+        }
     };
 
     let res = query
         .fetch_all(&mut *conn)
         .await?
         .iter()
-        .map(types::Entity::from_row)
-        .collect::<std::result::Result<Vec<types::Entity>, sqlx::Error>>();
+        .map(Entity::from_row)
+        .collect::<std::result::Result<Vec<Entity>, sqlx::Error>>();
 
     res.map_err(|e| e.into())
 }
 
-async fn create_group<'a, A>(conn: A, group: types::CreateGroupOpt) -> Result<i64>
+async fn create_group<'a, A>(conn: A, group: CreateGroupOpt) -> Result<i64>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -335,17 +350,17 @@ where
     }
 }
 
-async fn get_group<'a, A>(conn: A, opt: types::GetOpt) -> Result<Option<types::Group>>
+async fn get_group<'a, A>(conn: A, opt: GetOpt) -> Result<Option<Group>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
     let mut conn = conn.acquire().await?;
 
     let query = match opt {
-        types::GetOpt::ID(id) => {
+        GetOpt::ID(id) => {
             sqlx::query_as("SELECT * FROM feature_group WHERE id = ?").bind(id)
         }
-        types::GetOpt::Name(name) => {
+        GetOpt::Name(name) => {
             sqlx::query_as("SELECT * FROM feature_group WHERE name = ?").bind(name)
         }
     };
@@ -353,7 +368,7 @@ where
     Ok(query.fetch_optional(&mut *conn).await?)
 }
 
-async fn list_group<'a, A>(conn: A, opt: types::ListOpt) -> Result<Vec<types::Group>>
+async fn list_group<'a, A>(conn: A, opt: ListOpt) -> Result<Vec<Group>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -362,8 +377,8 @@ where
     let mut query_str = "SELECT * FROM feature_group".to_owned();
 
     let query = match opt {
-        types::ListOpt::All => sqlx::query(&query_str),
-        types::ListOpt::IDs(ids) => {
+        ListOpt::All => sqlx::query(&query_str),
+        ListOpt::IDs(ids) => {
             if ids.is_empty() {
                 return Ok(Vec::new());
             }
@@ -375,19 +390,34 @@ where
             }
             query
         }
+        ListOpt::Names(names) => {
+            if names.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            query_str = format!(
+                "{query_str} WHERE name in (?{})",
+                ", ?".repeat(names.len() - 1)
+            );
+            let mut query = sqlx::query(&query_str);
+            for name in names {
+                query = query.bind(name);
+            }
+            query
+        }
     };
 
     let res = query
         .fetch_all(&mut *conn)
         .await?
         .iter()
-        .map(types::Group::from_row)
-        .collect::<std::result::Result<Vec<types::Group>, sqlx::Error>>();
+        .map(Group::from_row)
+        .collect::<std::result::Result<Vec<Group>, sqlx::Error>>();
 
     res.map_err(|e| e.into())
 }
 
-async fn create_feature<'a, A>(conn: A, opt: types::CreateFeatureOpt) -> Result<i64>
+async fn create_feature<'a, A>(conn: A, opt: CreateFeatureOpt) -> Result<i64>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -435,15 +465,15 @@ where
     }
 }
 
-async fn get_feature<'a, A>(conn: A, opt: types::GetOpt) -> Result<Option<Feature>>
+async fn get_feature<'a, A>(conn: A, opt: GetOpt) -> Result<Option<Feature>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
     let mut conn = conn.acquire().await?;
 
     let query = match opt {
-        types::GetOpt::ID(id) => sqlx::query_as("SELECT * FROM feature WHERE id = ?").bind(id),
-        types::GetOpt::Name(name) => {
+        GetOpt::ID(id) => sqlx::query_as("SELECT * FROM feature WHERE id = ?").bind(id),
+        GetOpt::Name(name) => {
             sqlx::query_as("SELECT * FROM feature WHERE name = ?").bind(name)
         }
     };
@@ -474,6 +504,21 @@ where
             }
             query
         }
+        ListOpt::Names(names) => {
+            if names.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            query_str = format!(
+                "{query_str} WHERE name in (?{})",
+                ", ?".repeat(names.len() - 1)
+            );
+            let mut query = sqlx::query(&query_str);
+            for name in names {
+                query = query.bind(name);
+            }
+            query
+        }
     };
 
     let res = query
@@ -491,8 +536,8 @@ mod tests {
     use sqlx::SqlitePool;
 
     use crate::database::metadata::sqlite::DB;
-    use crate::database::metadata::types::FeatureValueType;
-    use crate::database::{error::Error, metadata::types::Category};
+    use crate::database::metadata::FeatureValueType;
+    use crate::database::{error::Error, metadata::Category};
 
     use super::*;
 
@@ -612,6 +657,32 @@ mod tests {
         assert_eq!(entities.len(), 3);
 
         let entities = super::list_entity(&db.pool, ListOpt::IDs(Vec::new()))
+            .await
+            .unwrap();
+        assert_eq!(entities.len(), 0);
+
+        let entities = super::list_entity(
+            &db.pool,
+            ListOpt::Names(vec!["name".to_string(), "name2".to_string()]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(entities.len(), 2);
+
+        let entities = super::list_entity(
+            &db.pool,
+            ListOpt::Names(vec![
+                "name".to_string(),
+                "name2".to_string(),
+                "name3".to_string(),
+                "name4".to_string(),
+            ]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(entities.len(), 3);
+
+        let entities = super::list_entity(&db.pool, ListOpt::Names(Vec::new()))
             .await
             .unwrap();
         assert_eq!(entities.len(), 0);
@@ -795,6 +866,18 @@ mod tests {
         let group = super::list_group(&db.pool, ListOpt::IDs(vec![1, 2, 3]))
             .await
             .unwrap();
+        assert_eq!(group.len(), 2);
+
+        let group = super::list_group(
+            &db.pool,
+            ListOpt::Names(vec![
+                "name1".to_owned(),
+                "name2".to_owned(),
+                "name3".to_owned(),
+            ]),
+        )
+        .await
+        .unwrap();
         assert_eq!(group.len(), 2);
     }
 
@@ -1051,6 +1134,18 @@ mod tests {
         let features = super::list_feature(&db.pool, ListOpt::IDs(vec![1, 2, 3]))
             .await
             .unwrap();
+        assert_eq!(features.len(), 2);
+
+        let features = super::list_feature(
+            &db.pool,
+            ListOpt::Names(vec![
+                "feature_name".to_owned(),
+                "feature_name2".to_owned(),
+                "feature_name3".to_owned(),
+            ]),
+        )
+        .await
+        .unwrap();
         assert_eq!(features.len(), 2);
     }
 }

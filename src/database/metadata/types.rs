@@ -119,4 +119,5 @@ pub enum GetOpt {
 pub enum ListOpt {
     All,
     IDs(Vec<i64>),
+    Names(Vec<String>),
 }
