@@ -1,4 +1,5 @@
 use phf::phf_map;
+use sqlx::SqlitePool;
 
 pub static META_TABLE_SCHEMAS: phf::Map<&'static str, &'static str> = phf_map! {
     "entity" => r#"
@@ -40,3 +41,33 @@ pub static META_TABLE_SCHEMAS: phf::Map<&'static str, &'static str> = phf_map! {
 };
 
 pub static META_VIEW_SCHEMAS: phf::Map<&'static str, &'static str> = phf_map! {};
+
+pub async fn create_schemas(pool: &SqlitePool) {
+    for table_schema in META_TABLE_SCHEMAS.values() {
+        sqlx::query(&table_schema)
+            .execute(pool)
+            .await
+            .expect(format!("create schemai {} failed!", table_schema).as_str());
+    }
+}
+
+pub async fn create_views(pool: &SqlitePool) {
+    for view_schema in META_VIEW_SCHEMAS.values() {
+        sqlx::query(&view_schema).execute(pool).await.unwrap();
+    }
+}
+
+pub async fn create_trigger(pool: &SqlitePool) {
+    for table in META_TABLE_SCHEMAS.keys() {
+        //TODO: use template engine instead {}
+        let trigger = format!(
+            r"
+                    CREATE TRIGGER IF NOT EXISTS {table}_update_modify_time
+                    AFTER UPDATE ON {table}
+                    BEGIN
+                        update {table} SET modify_time = datetime('now') WHERE id = NEW.id;
+                    END;"
+        );
+        sqlx::query(&trigger).execute(pool).await.unwrap();
+    }
+}

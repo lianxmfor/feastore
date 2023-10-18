@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use crate::database::error::Error;
 use crate::database::metadata::types::{Category, FeatureValueType};
-use crate::feastore::FeaStore;
+use crate::store::Store;
 
-impl FeaStore {
+impl Store {
     pub async fn apply<R: std::io::Read>(&self, opt: ApplyOpt<R>) -> Result<(), Error> {
         let stage = ApplyStage::from_opt(opt).map_err(|e| Error::Other(e))?;
         self.metadata.apply(stage).await

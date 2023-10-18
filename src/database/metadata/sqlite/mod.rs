@@ -4,10 +4,9 @@ pub mod schema;
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 
 use crate::database::error::Error;
-use crate::database::metadata::{self, *};
+use crate::database::metadata::*;
 use crate::database::{Result, SQLiteOpt};
-use crate::feastore::apply::ApplyStage;
-use schema::{META_TABLE_SCHEMAS, META_VIEW_SCHEMAS};
+use crate::store::apply::ApplyStage;
 
 pub struct DB {
     pub pool: SqlitePool,
@@ -30,29 +29,9 @@ impl DB {
 
 impl DB {
     async fn create_schemas(&self) {
-        for table_schema in META_TABLE_SCHEMAS.values() {
-            sqlx::query(&table_schema)
-                .execute(&self.pool)
-                .await
-                .expect(format!("create schemai {} failed!", table_schema).as_str());
-        }
-
-        for view_schema in META_VIEW_SCHEMAS.values() {
-            sqlx::query(&view_schema).execute(&self.pool).await.unwrap();
-        }
-
-        for table in META_TABLE_SCHEMAS.keys() {
-            //TODO: use template engine instead {}
-            let trigger = format!(
-                r"
-                    CREATE TRIGGER IF NOT EXISTS {table}_update_modify_time
-                    AFTER UPDATE ON {table}
-                    BEGIN
-                        update {table} SET modify_time = datetime('now') WHERE id = NEW.id;
-                    END;"
-            );
-            sqlx::query(&trigger).execute(&self.pool).await.unwrap();
-        }
+        schema::create_schemas(&self.pool).await;
+        schema::create_views(&self.pool).await;
+        schema::create_trigger(&self.pool).await;
     }
 
     pub(crate) async fn close(&self) {
@@ -242,9 +221,7 @@ where
 
     let query = match opt {
         GetOpt::ID(id) => sqlx::query_as("SELECT * FROM entity WHERE id = ?").bind(id),
-        GetOpt::Name(name) => {
-            sqlx::query_as("SELECT * FROM entity WHERE name = ?").bind(name)
-        }
+        GetOpt::Name(name) => sqlx::query_as("SELECT * FROM entity WHERE name = ?").bind(name),
     };
 
     Ok(query.fetch_optional(&mut *conn).await?)
@@ -357,9 +334,7 @@ where
     let mut conn = conn.acquire().await?;
 
     let query = match opt {
-        GetOpt::ID(id) => {
-            sqlx::query_as("SELECT * FROM feature_group WHERE id = ?").bind(id)
-        }
+        GetOpt::ID(id) => sqlx::query_as("SELECT * FROM feature_group WHERE id = ?").bind(id),
         GetOpt::Name(name) => {
             sqlx::query_as("SELECT * FROM feature_group WHERE name = ?").bind(name)
         }
@@ -473,9 +448,7 @@ where
 
     let query = match opt {
         GetOpt::ID(id) => sqlx::query_as("SELECT * FROM feature WHERE id = ?").bind(id),
-        GetOpt::Name(name) => {
-            sqlx::query_as("SELECT * FROM feature WHERE name = ?").bind(name)
-        }
+        GetOpt::Name(name) => sqlx::query_as("SELECT * FROM feature WHERE name = ?").bind(name),
     };
 
     Ok(query.fetch_optional(&mut *conn).await?)

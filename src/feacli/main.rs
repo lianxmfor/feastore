@@ -2,7 +2,8 @@ mod apply;
 mod get;
 
 use clap::{Parser, Subcommand};
-use feastore::{opt::FeaStoreConfig, FeaStore};
+use feastore::store::opt::FeaStoreConfig;
+use feastore::store::Store;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -26,7 +27,7 @@ enum Commands {
 impl Cli {
     pub async fn execute(&self) {
         let cfg = self.init_config();
-        let feastore = FeaStore::open(cfg).await;
+        let feastore = Store::open(cfg).await;
 
         match &self.command {
             Commands::Apply(cmd) => cmd.execute(feastore).await,
