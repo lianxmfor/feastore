@@ -2,7 +2,7 @@ mod apply;
 mod get;
 
 use clap::{Parser, Subcommand};
-use feastore::store::opt::FeaStoreConfig;
+use feastore::store::FeaStoreConfig;
 use feastore::store::Store;
 
 #[derive(Parser)]

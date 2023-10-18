@@ -1,20 +1,17 @@
 pub mod apply;
-pub mod entity;
-pub mod opt;
+pub mod types;
 
-use crate::database::metadata;
-use crate::database::metadata::types::{Entity, Feature, GetOpt, Group, ListOpt};
+use crate::database::metadata::{DataStore, Entity, Feature, GetOpt, Group, ListOpt};
 use crate::database::Result;
-
-use opt::FeaStoreConfig;
+pub use types::FeaStoreConfig;
 
 pub struct Store {
-    metadata: metadata::DataStore,
+    metadata: DataStore,
 }
 
 impl Store {
     pub async fn open(opt: FeaStoreConfig) -> Store {
-        let metadata_store = metadata::DataStore::open(opt.metadata).await;
+        let metadata_store = DataStore::open(opt.metadata).await;
 
         Store {
             metadata: metadata_store,

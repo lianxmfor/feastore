@@ -1,10 +1,10 @@
 pub mod sqlite;
 pub mod types;
 
-use crate::database::metadata::types::*;
+pub use crate::database::metadata::types::*;
 use crate::database::Result;
 use crate::store::apply;
-use crate::store::opt::BackendOpt;
+use crate::store::types::BackendOpt;
 
 pub enum DataStore {
     Sqlite(sqlite::DB),
