@@ -5,6 +5,8 @@ use crate::database::metadata::{DataStore, Entity, Feature, GetOpt, Group, ListO
 use crate::database::Result;
 pub use types::FeaStoreConfig;
 
+use self::apply::{ApplyOpt, ApplyStage};
+
 pub struct Store {
     metadata: DataStore,
 }
@@ -16,6 +18,11 @@ impl Store {
         Store {
             metadata: metadata_store,
         }
+    }
+
+    pub async fn apply<R: std::io::Read>(&self, opt: ApplyOpt<R>) -> Result<()> {
+        let stage = ApplyStage::from_opt(opt)?;
+        self.metadata.apply(stage).await
     }
 
     pub async fn close(&self) {

@@ -187,7 +187,7 @@ where
             if e.message() == "UNIQUE constraint failed: entity.name" {
                 Err(Error::ColumnAlreadyExist(name.to_string()))
             } else {
-                Err(e.into())
+                Err(e.to_string().into())
             }
         }
         _ => Ok(res?.last_insert_rowid()),
@@ -297,7 +297,7 @@ where
             if e.message() == "UNIQUE constraint failed: feature_group.name" {
                 Err(Error::ColumnAlreadyExist(group.name))
             } else {
-                Err(e.into())
+                Err(e.to_string().into())
             }
         }
         _ => Ok(res?.last_insert_rowid()),
@@ -413,7 +413,7 @@ where
                 Err(Error::ColumnAlreadyExist(opt.feature_name))
             } else {
                 println!("{}", e.message());
-                Err(e.into())
+                Err(e.to_string().into())
             }
         }
         _ => Ok(res?.last_insert_rowid()),

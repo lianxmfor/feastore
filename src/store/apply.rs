@@ -1,4 +1,3 @@
-use clap::error::Result;
 use serde::Deserialize;
 use serde_with::{serde_as, DurationSeconds};
 use serde_yaml as yaml;
@@ -7,16 +6,8 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
 
-use crate::database::error::Error;
 use crate::database::metadata::types::{Category, FeatureValueType};
-use crate::store::Store;
-
-impl Store {
-    pub async fn apply<R: std::io::Read>(&self, opt: ApplyOpt<R>) -> Result<(), Error> {
-        let stage = ApplyStage::from_opt(opt).map_err(|e| Error::Other(e))?;
-        self.metadata.apply(stage).await
-    }
-}
+use crate::database::Result;
 
 pub struct ApplyOpt<R: std::io::Read> {
     pub r: R,
@@ -30,11 +21,11 @@ pub(crate) struct ApplyStage {
 }
 
 impl ApplyStage {
-    pub fn from_opt<R: Read>(opt: ApplyOpt<R>) -> Result<Self, String> {
+    pub fn from_opt<R: Read>(opt: ApplyOpt<R>) -> Result<Self> {
         let mut stage = ApplyStage::empty();
 
-        for deserializer in yaml::Deserializer::from_reader(opt.r) {
-            let value = yaml::Value::deserialize(deserializer).expect("Unable to parse");
+        for de in yaml::Deserializer::from_reader(opt.r) {
+            let value = yaml::Value::deserialize(de).expect("Unable to parse");
             let sub_stage = Self::from_value(value)?;
             stage.merge(sub_stage);
         }
@@ -52,7 +43,7 @@ impl ApplyStage {
         }
     }
 
-    fn from_value(value: yaml::Value) -> Result<Self, String> {
+    fn from_value(value: yaml::Value) -> Result<Self> {
         match parse_kind(&value) {
             Some("Entity") => {
                 let entity: Entity = yaml::from_value(value).expect("Unable to parse");
@@ -99,14 +90,14 @@ impl ApplyStage {
                             stage.merge(Self::from_feature(f));
                         }
                     }
-                    Some(kind) => return Err(format!("invalid kind '{}'", kind)),
-                    None => return Err("invalid yaml: missing kind or items".to_string()),
+                    Some(kind) => return Err(format!("invalid kind '{}'", kind).into()),
+                    None => return Err("invalid yaml: missing kind or items".into()),
                 }
 
                 Ok(stage)
             }
-            Some(kind) => Err(format!("invalid kind '{}'", kind)),
-            None => Err("invalid yaml: missing kind or items".to_string()),
+            Some(kind) => Err(format!("invalid kind '{}'", kind).into()),
+            None => Err("invalid yaml: missing kind or items".into()),
         }
     }
 
@@ -263,7 +254,7 @@ mod tests {
             description: &'static str,
             opt: ApplyOpt<&'static [u8]>,
 
-            want: Result<ApplyStage, String>,
+            want: Result<ApplyStage>,
         }
 
         let test_cases = vec![
@@ -277,7 +268,7 @@ description: 'User ID'
 "#
                     .as_bytes(),
                 },
-                want: Err(s("invalid yaml: missing kind or items")),
+                want: Err(s("invalid yaml: missing kind or items").into()),
             },
             TestCase {
                 description: "invalid kind",
@@ -289,7 +280,7 @@ description: 'description'
 "#
                     .as_bytes(),
                 },
-                want: Err(s("invalid kind 'Entit'")),
+                want: Err(s("invalid kind 'Entit'").into()),
             },
             TestCase {
                 description: "single entity",
