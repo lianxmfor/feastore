@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::database::SQLiteOpt;
+use crate::store::database::SQLiteOpt;
 
 #[derive(Serialize, Deserialize)]
 pub struct FeaStoreConfig {

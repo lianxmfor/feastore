@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
 
-use crate::database::metadata::types::{Category, FeatureValueType};
-use crate::database::Result;
+use crate::store::database::Result;
+use crate::store::metadata::types::{Category, FeatureValueType};
 
 pub struct ApplyOpt<R: std::io::Read> {
     pub r: R,
@@ -245,7 +245,7 @@ fn parse_items_kind(value: &yaml::Value) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::metadata::types::Category::{Batch, Stream};
+    use crate::store::database::metadata::types::Category::{Batch, Stream};
     use std::time::Duration;
 
     #[test]

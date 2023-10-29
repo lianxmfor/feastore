@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use feastore::database::metadata::types::ListOpt;
+use feastore::store::metadata::types::ListOpt;
 use feastore::store::Store;
 
 #[derive(Debug, Subcommand)]
