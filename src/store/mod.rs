@@ -1,11 +1,13 @@
 pub mod apply;
+pub mod database;
 pub mod types;
 
-use crate::database::metadata::{DataStore, Entity, Feature, GetOpt, Group, ListOpt};
-use crate::database::Result;
+pub use database::metadata;
 pub use types::FeaStoreConfig;
 
-use self::apply::{ApplyOpt, ApplyStage};
+use apply::{ApplyOpt, ApplyStage};
+use database::Result;
+use metadata::{DataStore, Entity, Feature, GetOpt, Group, ListOpt};
 
 pub struct Store {
     metadata: DataStore,

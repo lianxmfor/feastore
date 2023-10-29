@@ -3,10 +3,10 @@ pub mod schema;
 
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 
-use crate::database::error::Error;
-use crate::database::metadata::*;
-use crate::database::{Result, SQLiteOpt};
-use crate::store::apply::ApplyStage;
+use crate::store::database::{Error, Result, SQLiteOpt};
+use crate::store::ApplyStage;
+
+use super::types::*;
 
 pub struct DB {
     pub pool: SqlitePool,
@@ -508,9 +508,11 @@ where
 mod tests {
     use sqlx::SqlitePool;
 
-    use crate::database::metadata::sqlite::DB;
-    use crate::database::metadata::FeatureValueType;
-    use crate::database::{error::Error, metadata::Category};
+    use crate::store::database::error::Error;
+    use crate::store::metadata::{
+        sqlite::{Category, DB},
+        FeatureValueType,
+    };
 
     use super::*;
 
