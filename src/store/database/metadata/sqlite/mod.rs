@@ -16,7 +16,7 @@ impl DB {
     pub(crate) async fn from(db_file: SQLiteOpt) -> Self {
         let pool = SqlitePool::connect(format!("sqlite://{}", &db_file.db_file).as_str())
             .await
-            .expect(&format!("open {} failed!", db_file.db_file));
+            .unwrap_or_else(|_| panic!("open {} failed!", db_file.db_file));
 
         let db = Self { pool };
         db.create_schemas().await;

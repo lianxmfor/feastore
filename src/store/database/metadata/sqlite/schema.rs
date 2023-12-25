@@ -44,16 +44,16 @@ pub static META_VIEW_SCHEMAS: phf::Map<&'static str, &'static str> = phf_map! {}
 
 pub async fn create_schemas(pool: &SqlitePool) {
     for table_schema in META_TABLE_SCHEMAS.values() {
-        sqlx::query(&table_schema)
+        sqlx::query(table_schema)
             .execute(pool)
             .await
-            .expect(format!("create schemai {} failed!", table_schema).as_str());
+            .unwrap_or_else(|_| panic!("create schema {} failed!", table_schema));
     }
 }
 
 pub async fn create_views(pool: &SqlitePool) {
     for view_schema in META_VIEW_SCHEMAS.values() {
-        sqlx::query(&view_schema).execute(pool).await.unwrap();
+        sqlx::query(view_schema).execute(pool).await.unwrap();
     }
 }
 

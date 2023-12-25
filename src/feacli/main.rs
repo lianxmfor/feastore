@@ -2,8 +2,7 @@ mod apply;
 mod get;
 
 use clap::{Parser, Subcommand};
-use feastore::store::FeaStoreConfig;
-use feastore::store::Store;
+use feastore::store::{FeaStoreConfig, Store};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -48,7 +47,7 @@ impl Cli {
             String::from("/Users/lianxm/.config/feastore/config.yaml")
         };
 
-        let f = std::fs::File::open(&config).expect(&format!("open {config} failed!"));
+        let f = std::fs::File::open(&config).unwrap_or_else(|_| panic!("open {config} failed!"));
 
         serde_yaml::from_reader(f).unwrap()
     }
