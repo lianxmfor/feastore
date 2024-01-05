@@ -5,7 +5,7 @@ pub mod types;
 pub use database::metadata;
 pub use types::FeaStoreConfig;
 
-use apply::{ApplyOpt, ApplyStage};
+use apply::Stage;
 use database::Result;
 use metadata::{DataStore, Entity, Feature, GetOpt, Group, ListOpt};
 
@@ -22,8 +22,8 @@ impl Store {
         }
     }
 
-    pub async fn apply<R: std::io::Read>(&self, opt: ApplyOpt<R>) -> Result<()> {
-        let stage = ApplyStage::from_opt(opt)?;
+    pub async fn apply<R: std::io::Read>(&self, r: R) -> Result<()> {
+        let stage = Stage::from_reader(r)?;
         self.metadata.apply(stage).await
     }
 

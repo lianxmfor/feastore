@@ -92,7 +92,7 @@ impl DataStore {
             Self::Sqlite(db) => db.list_feature(opt).await,
         }
     }
-    pub(crate) async fn apply(&self, stage: apply::ApplyStage) -> Result<()> {
+    pub(crate) async fn apply(&self, stage: apply::Stage) -> Result<()> {
         match self {
             Self::Sqlite(db) => db.apply(stage).await,
         }

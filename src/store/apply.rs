@@ -3,44 +3,38 @@ use serde_with::{serde_as, DurationSeconds};
 use serde_yaml as yaml;
 
 use std::collections::HashMap;
-use std::io::Read;
+use std::io;
 use std::time::Duration;
 
 use crate::store::database::Result;
 use crate::store::metadata::types::{Category, FeatureValueType};
 
-pub struct ApplyOpt<R: std::io::Read> {
-    pub r: R,
-}
-
 #[derive(Debug, PartialEq)]
-pub(crate) struct ApplyStage {
+pub(crate) struct Stage {
     pub new_entities: Vec<Entity>,
     pub new_groups: Vec<Group>,
     pub new_features: Vec<Feature>,
 }
 
-impl ApplyStage {
-    pub fn from_opt<R: Read>(opt: ApplyOpt<R>) -> Result<Self> {
-        let mut stage = ApplyStage::empty();
-
-        for de in yaml::Deserializer::from_reader(opt.r) {
-            let value = yaml::Value::deserialize(de).expect("Unable to parse");
-            let sub_stage = Self::from_value(value)?;
-            stage.merge(sub_stage);
-        }
-
-        Ok(stage)
-    }
-}
-
-impl ApplyStage {
-    fn empty() -> Self {
+impl Stage {
+    fn new() -> Self {
         Self {
             new_entities: Vec::new(),
             new_groups: Vec::new(),
             new_features: Vec::new(),
         }
+    }
+
+    pub fn from_reader<R: io::Read>(r: R) -> Result<Self> {
+        let mut stage = Stage::new();
+
+        for de in yaml::Deserializer::from_reader(r) {
+            let v = yaml::Value::deserialize(de).expect("Unable to parse");
+            let sub_stage = Self::from_value(v)?;
+            stage.merge(sub_stage);
+        }
+
+        Ok(stage)
     }
 
     fn from_value(value: yaml::Value) -> Result<Self> {
@@ -64,7 +58,7 @@ impl ApplyStage {
                     "Items"
                 };
 
-                let mut stage = Self::empty();
+                let mut stage = Self::new();
                 match parse_items_kind(&value) {
                     Some("Entity") => {
                         let mut entities: HashMap<String, Vec<Entity>> =
@@ -102,7 +96,7 @@ impl ApplyStage {
     }
 
     fn from_entity(entity: Entity) -> Self {
-        let mut stage = ApplyStage::empty();
+        let mut stage = Stage::new();
 
         stage.new_entities.push(entity.flat());
         for g in entity.groups.unwrap_or_default() {
@@ -117,7 +111,7 @@ impl ApplyStage {
     }
 
     fn from_group(group: Group) -> Self {
-        let mut stage = ApplyStage::empty();
+        let mut stage = Stage::new();
 
         stage
             .new_groups
@@ -130,12 +124,11 @@ impl ApplyStage {
         stage
     }
 
-    fn from_feature(feature: Feature) -> Self {
-        let mut stage = ApplyStage::empty();
+    fn from_feature(mut feature: Feature) -> Self {
+        let mut stage = Stage::new();
 
-        stage
-            .new_features
-            .push(feature.fill(feature.group_name.to_owned()));
+        let group_name = feature.group_name.take();
+        stage.new_features.push(feature.fill(group_name));
         stage
     }
 
@@ -252,47 +245,41 @@ mod tests {
     fn test_build_apply_stage() {
         struct TestCase {
             description: &'static str,
-            opt: ApplyOpt<&'static [u8]>,
+            r: &'static [u8],
 
-            want: Result<ApplyStage>,
+            want: Result<Stage>,
         }
 
         let test_cases = vec![
             TestCase {
                 description: "invalid yaml: missing kind or items",
-                opt: ApplyOpt {
-                    r: r#"
+                r: r#"
 # kind: Entity
 name: user
 description: 'User ID'
 "#
-                    .as_bytes(),
-                },
+                .as_bytes(),
                 want: Err(s("invalid yaml: missing kind or items").into()),
             },
             TestCase {
                 description: "invalid kind",
-                opt: ApplyOpt {
-                    r: r#"
+                r: r#"
 kind: Entit
 name: user
 description: 'description'
 "#
-                    .as_bytes(),
-                },
+                .as_bytes(),
                 want: Err(s("invalid kind 'Entit'").into()),
             },
             TestCase {
                 description: "single entity",
-                opt: ApplyOpt {
-                    r: r#"
+                r: r#"
 kind: Entity
 name: user
 description: 'description'
 "#
-                    .as_bytes(),
-                },
-                want: Ok(ApplyStage {
+                .as_bytes(),
+                want: Ok(Stage {
                     new_entities: vec![Entity {
                         kind: Some(s("Entity")),
                         name: s("user"),
@@ -305,8 +292,7 @@ description: 'description'
             },
             TestCase {
                 description: "has many simple objects",
-                opt: ApplyOpt {
-                    r: r#"
+                r: r#"
 kind: Entity
 name: user
 description: 'description'
@@ -344,9 +330,8 @@ category: batch
 value-type: int64
 description: 'description'
                 "#
-                    .as_bytes(),
-                },
-                want: Ok(ApplyStage {
+                .as_bytes(),
+                want: Ok(Stage {
                     new_entities: vec![Entity {
                         kind: Some(s("Entity")),
                         name: s("user"),
@@ -402,8 +387,7 @@ description: 'description'
             },
             TestCase {
                 description: "comlex group",
-                opt: ApplyOpt {
-                    r: r#"
+                r: r#"
 kind: Group
 name: device
 entity-name: user
@@ -417,9 +401,8 @@ features:
   value-type: int64
   description: 'description'   
 "#
-                    .as_bytes(),
-                },
-                want: Ok(ApplyStage {
+                .as_bytes(),
+                want: Ok(Stage {
                     new_entities: vec![],
                     new_groups: vec![Group {
                         kind: Some(s("Group")),
@@ -450,8 +433,7 @@ features:
             },
             TestCase {
                 description: "complex entity",
-                opt: ApplyOpt {
-                    r: r#"
+                r: r#"
 kind: Entity
 name: user
 description: 'description'
@@ -488,9 +470,8 @@ groups:
     value-type: int64
     description: 'description'
 "#
-                    .as_bytes(),
-                },
-                want: Ok(ApplyStage {
+                .as_bytes(),
+                want: Ok(Stage {
                     new_entities: vec![Entity {
                         kind: Some(s("Entity")),
                         name: s("user"),
@@ -574,8 +555,7 @@ groups:
             },
             TestCase {
                 description: "feature slice",
-                opt: ApplyOpt {
-                    r: r#"
+                r: r#"
 items:
     - kind: Feature
       name: credit_score
@@ -603,9 +583,8 @@ items:
       value-type: int64
       description: "transaction_count_30d description"
 "#
-                    .as_bytes(),
-                },
-                want: Ok(ApplyStage {
+                .as_bytes(),
+                want: Ok(Stage {
                     new_entities: vec![],
                     new_groups: vec![],
                     new_features: vec![
@@ -649,8 +628,7 @@ items:
             },
             TestCase {
                 description: "group slice",
-                opt: ApplyOpt {
-                    r: r#"
+                r: r#"
 items:
     - kind: Group
       name: account
@@ -680,9 +658,8 @@ items:
           value-type: int64
           description: transaction_count_30d description
 "#
-                    .as_bytes(),
-                },
-                want: Ok(ApplyStage {
+                .as_bytes(),
+                want: Ok(Stage {
                     new_entities: vec![],
                     new_groups: vec![
                         Group {
@@ -745,8 +722,7 @@ items:
             },
             TestCase {
                 description: "entity slice",
-                opt: ApplyOpt {
-                    r: r#"
+                r: r#"
 items:
     - kind: Entity
       name: user
@@ -790,9 +766,8 @@ items:
               value-type: int64
               description: price description
 "#
-                    .as_bytes(),
-                },
-                want: Ok(ApplyStage {
+                .as_bytes(),
+                want: Ok(Stage {
                     new_entities: vec![
                         Entity {
                             kind: Some(s("Entity")),
@@ -892,7 +867,7 @@ items:
         ];
 
         for case in test_cases {
-            let stage = ApplyStage::from_opt(case.opt);
+            let stage = Stage::from_reader(case.r);
             assert_eq!(stage, case.want, "{}", case.description);
         }
     }

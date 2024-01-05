@@ -2,7 +2,6 @@ use std::fs;
 
 use clap::Args;
 
-use feastore::store::apply::ApplyOpt;
 use feastore::store::Store;
 
 #[derive(Debug, Args)]
@@ -22,9 +21,6 @@ impl Command {
             .open(&self.filepath)
             .expect("open file failed.");
 
-        store
-            .apply(ApplyOpt { r: reader })
-            .await
-            .expect("apply failed.")
+        store.apply(reader).await.expect("apply failed.")
     }
 }
