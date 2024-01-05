@@ -45,7 +45,7 @@ impl DataStore {
             Self::Sqlite(db) => db.get_entity(opt).await,
         }
     }
-    pub(crate) async fn list_entity(&self, opt: ListOpt) -> Result<Vec<Entity>> {
+    pub(crate) async fn list_entity<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Entity>> {
         match self {
             Self::Sqlite(db) => db.list_entity(opt).await,
         }
@@ -66,7 +66,7 @@ impl DataStore {
             Self::Sqlite(db) => db.get_group(opt).await,
         }
     }
-    pub(crate) async fn list_group(&self, opt: ListOpt) -> Result<Vec<Group>> {
+    pub(crate) async fn list_group<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Group>> {
         match self {
             Self::Sqlite(db) => db.list_group(opt).await,
         }
@@ -87,7 +87,7 @@ impl DataStore {
             Self::Sqlite(db) => db.get_feature(opt).await,
         }
     }
-    pub(crate) async fn list_feature(&self, opt: ListOpt) -> Result<Vec<Feature>> {
+    pub(crate) async fn list_feature<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Feature>> {
         match self {
             Self::Sqlite(db) => db.list_feature(opt).await,
         }

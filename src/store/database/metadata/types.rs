@@ -116,8 +116,8 @@ pub enum GetOpt<'a> {
     Name(&'a str),
 }
 
-pub enum ListOpt {
+pub enum ListOpt<'a> {
     All,
     IDs(Vec<i64>),
-    Names(Vec<String>),
+    Names(Vec<&'a str>),
 }

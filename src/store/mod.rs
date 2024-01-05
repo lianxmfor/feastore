@@ -51,15 +51,15 @@ impl Store {
         self.metadata.get_feature(opt).await
     }
 
-    pub async fn list_entity(&self, opt: ListOpt) -> Result<Vec<Entity>> {
+    pub async fn list_entity<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Entity>> {
         self.metadata.list_entity(opt).await
     }
 
-    pub async fn list_group(&self, opt: ListOpt) -> Result<Vec<Group>> {
+    pub async fn list_group<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Group>> {
         self.metadata.list_group(opt).await
     }
 
-    pub async fn list_feature(&self, opt: ListOpt) -> Result<Vec<Feature>> {
+    pub async fn list_feature<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Feature>> {
         self.metadata.list_feature(opt).await
     }
 }

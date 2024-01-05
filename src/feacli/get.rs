@@ -38,7 +38,9 @@ struct GetEntity {
 impl GetEntity {
     pub async fn execute(&self, store: Store) {
         let entities = store
-            .list_entity(ListOpt::Names(self.entity_names.to_owned()))
+            .list_entity(ListOpt::Names(
+                self.entity_names.iter().map(|n| n as &str).collect(),
+            ))
             .await
             .expect("get entity failed.");
 
@@ -59,7 +61,9 @@ struct GetGroup {
 impl GetGroup {
     pub async fn execute(&self, store: Store) {
         let groups = store
-            .list_group(ListOpt::Names(self.group_names.to_owned()))
+            .list_group(ListOpt::Names(
+                self.group_names.iter().map(|n| n as &str).collect(),
+            ))
             .await
             .expect("get group failed.");
 

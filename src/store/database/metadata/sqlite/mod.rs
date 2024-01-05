@@ -48,7 +48,7 @@ impl DB {
     pub(crate) async fn get_entity<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Entity>> {
         get_entity(&self.pool, opt).await
     }
-    pub(crate) async fn list_entity(&self, opt: ListOpt) -> Result<Vec<Entity>> {
+    pub(crate) async fn list_entity<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Entity>> {
         list_entity(&self.pool, opt).await
     }
 
@@ -64,7 +64,7 @@ impl DB {
         get_group(&self.pool, opt).await
     }
 
-    pub(crate) async fn list_group(&self, opt: ListOpt) -> Result<Vec<Group>> {
+    pub(crate) async fn list_group<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Group>> {
         list_group(&self.pool, opt).await
     }
 
@@ -80,7 +80,7 @@ impl DB {
         get_feature(&self.pool, opt).await
     }
 
-    pub(crate) async fn list_feature(&self, opt: ListOpt) -> Result<Vec<Feature>> {
+    pub(crate) async fn list_feature<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Feature>> {
         list_feature(&self.pool, opt).await
     }
 
@@ -251,7 +251,7 @@ where
     Ok(query.fetch_optional(&mut *conn).await?)
 }
 
-async fn list_entity<'a, A>(conn: A, opt: ListOpt) -> Result<Vec<Entity>>
+async fn list_entity<'a, A>(conn: A, opt: ListOpt<'a>) -> Result<Vec<Entity>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -367,7 +367,7 @@ where
     Ok(query.fetch_optional(&mut *conn).await?)
 }
 
-async fn list_group<'a, A>(conn: A, opt: ListOpt) -> Result<Vec<Group>>
+async fn list_group<'a, A>(conn: A, opt: ListOpt<'a>) -> Result<Vec<Group>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -478,7 +478,7 @@ where
     Ok(query.fetch_optional(&mut *conn).await?)
 }
 
-async fn list_feature<'a, A>(conn: A, opt: ListOpt) -> Result<Vec<Feature>>
+async fn list_feature<'a, A>(conn: A, opt: ListOpt<'a>) -> Result<Vec<Feature>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -660,22 +660,14 @@ mod tests {
             .unwrap();
         assert_eq!(entities.len(), 0);
 
-        let entities = super::list_entity(
-            &db.pool,
-            ListOpt::Names(vec!["name".to_string(), "name2".to_string()]),
-        )
-        .await
-        .unwrap();
+        let entities = super::list_entity(&db.pool, ListOpt::Names(vec![&"name", &"name2"]))
+            .await
+            .unwrap();
         assert_eq!(entities.len(), 2);
 
         let entities = super::list_entity(
             &db.pool,
-            ListOpt::Names(vec![
-                "name".to_string(),
-                "name2".to_string(),
-                "name3".to_string(),
-                "name4".to_string(),
-            ]),
+            ListOpt::Names(vec![&"name", &"name2", &"name3", &"name4"]),
         )
         .await
         .unwrap();
@@ -867,16 +859,9 @@ mod tests {
             .unwrap();
         assert_eq!(group.len(), 2);
 
-        let group = super::list_group(
-            &db.pool,
-            ListOpt::Names(vec![
-                "name1".to_owned(),
-                "name2".to_owned(),
-                "name3".to_owned(),
-            ]),
-        )
-        .await
-        .unwrap();
+        let group = super::list_group(&db.pool, ListOpt::Names(vec![&"name1", &"name2", &"name3"]))
+            .await
+            .unwrap();
         assert_eq!(group.len(), 2);
     }
 
@@ -1137,11 +1122,7 @@ mod tests {
 
         let features = super::list_feature(
             &db.pool,
-            ListOpt::Names(vec![
-                "feature_name".to_owned(),
-                "feature_name2".to_owned(),
-                "feature_name3".to_owned(),
-            ]),
+            ListOpt::Names(vec![&"feature_name", &"feature_name2", &"feature_name3"]),
         )
         .await
         .unwrap();
