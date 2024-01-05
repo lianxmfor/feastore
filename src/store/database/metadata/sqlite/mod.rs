@@ -4,7 +4,7 @@ pub mod schema;
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 
 use crate::store::database::{Error, Result, SQLiteOpt};
-use crate::store::ApplyStage;
+use crate::store::{apply, Stage};
 
 use super::types::*;
 
@@ -22,6 +22,11 @@ impl DB {
         db.create_schemas().await;
         db
     }
+
+    pub(crate) async fn close(&self) {
+        self.pool.close().await;
+    }
+
     fn from_pool(pool: SqlitePool) -> Self {
         Self { pool }
     }
@@ -32,10 +37,6 @@ impl DB {
         schema::create_schemas(&self.pool).await;
         schema::create_views(&self.pool).await;
         schema::create_trigger(&self.pool).await;
-    }
-
-    pub(crate) async fn close(&self) {
-        self.pool.close().await;
     }
 
     pub(crate) async fn create_entity(&self, name: &str, description: &str) -> Result<i64> {
@@ -83,36 +84,51 @@ impl DB {
         list_feature(&self.pool, opt).await
     }
 
-    pub(crate) async fn apply(&self, stage: ApplyStage) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
-
-        for ne in stage.new_entities {
-            let e = get_entity(&mut tx, GetOpt::Name(ne.name.clone())).await?;
+    async fn apply_entities(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        mut entities: Vec<apply::Entity>,
+    ) -> Result<()> {
+        for ne in entities.drain(..) {
+            let e = get_entity(&mut *tx, GetOpt::Name(ne.name.clone())).await?;
             match e {
-                None => {
-                    create_entity(&mut tx, ne.name.as_str(), ne.description.as_str()).await?;
-                }
                 Some(e) => {
                     if e.description != ne.description {
-                        update_entity(&mut tx, e.id, ne.description.as_str()).await?;
+                        update_entity(&mut *tx, e.id, ne.description.as_str()).await?;
                     }
+                }
+                None => {
+                    create_entity(&mut *tx, ne.name.as_str(), ne.description.as_str()).await?;
                 }
             }
         }
 
-        for ng in stage.new_groups {
-            let entity_name = if let Some(n) = ng.entity_name {
-                n
+        Ok(())
+    }
+
+    async fn apply_groups(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        mut groups: Vec<apply::Group>,
+    ) -> Result<()> {
+        for ng in groups.drain(..) {
+            let entity_name = if let Some(name) = ng.entity_name {
+                name
             } else {
                 continue;
             };
 
-            let g = get_group(&mut tx, GetOpt::Name(ng.name.clone())).await?;
+            let g = get_group(&mut *tx, GetOpt::Name(ng.name.clone())).await?;
             match g {
+                Some(g) => {
+                    if g.description != ng.description {
+                        update_group(&mut *tx, g.id, ng.description.as_str()).await?;
+                    }
+                }
                 None => {
-                    if let Some(e) = get_entity(&mut tx, GetOpt::Name(entity_name)).await? {
+                    if let Some(e) = get_entity(&mut *tx, GetOpt::Name(entity_name)).await? {
                         create_group(
-                            &mut tx,
+                            &mut *tx,
                             CreateGroupOpt {
                                 entity_id: e.id,
                                 name: ng.name,
@@ -123,27 +139,34 @@ impl DB {
                         .await?;
                     }
                 }
-                Some(g) => {
-                    if g.description != ng.description {
-                        update_group(&mut tx, g.id, ng.description.as_str()).await?;
-                    }
-                }
             }
         }
 
-        for nf in stage.new_features {
-            let group_name = if let Some(n) = nf.group_name {
-                n
+        Ok(())
+    }
+
+    async fn apply_features(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        mut features: Vec<apply::Feature>,
+    ) -> Result<()> {
+        for nf in features.drain(..) {
+            let group_name = if let Some(name) = nf.group_name {
+                name
             } else {
                 continue;
             };
-
-            let f = get_feature(&mut tx, GetOpt::Name(nf.name.clone())).await?;
-            match f {
+            let feature = get_feature(&mut *tx, GetOpt::Name(nf.name.clone())).await?;
+            match feature {
+                Some(feature) => {
+                    if feature.description != nf.description {
+                        update_feature(&mut *tx, feature.id, nf.description.as_str()).await?;
+                    }
+                }
                 None => {
-                    if let Some(g) = get_group(&mut tx, GetOpt::Name(group_name)).await? {
+                    if let Some(g) = get_group(&mut *tx, GetOpt::Name(group_name)).await? {
                         create_feature(
-                            &mut tx,
+                            &mut *tx,
                             CreateFeatureOpt {
                                 group_id: g.id,
                                 feature_name: nf.name,
@@ -154,20 +177,21 @@ impl DB {
                         .await?;
                     }
                 }
-                Some(feature) => {
-                    if feature.description != nf.description {
-                        update_feature(&mut tx, feature.id, nf.description.as_str()).await?;
-                    }
-                }
             }
         }
 
+        Ok(())
+    }
+
+    pub(crate) async fn apply(&self, stage: Stage) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        self.apply_entities(&mut tx, stage.new_entities).await?;
+        self.apply_groups(&mut tx, stage.new_groups).await?;
+        self.apply_features(&mut tx, stage.new_features).await?;
+
         tx.commit().await.map_err(|e| e.into())
     }
-}
-
-async fn apply(tx: &Transaction<'_, Sqlite>, stage: ApplyStage) -> Result<()> {
-    Ok(())
 }
 
 async fn create_entity<'a, A>(conn: A, name: &str, description: &str) -> Result<i64>
