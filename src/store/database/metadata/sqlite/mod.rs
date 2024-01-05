@@ -45,7 +45,7 @@ impl DB {
     pub(crate) async fn update_entity(&self, id: i64, new_description: &str) -> Result<()> {
         update_entity(&self.pool, id, new_description).await
     }
-    pub(crate) async fn get_entity(&self, opt: GetOpt) -> Result<Option<Entity>> {
+    pub(crate) async fn get_entity<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Entity>> {
         get_entity(&self.pool, opt).await
     }
     pub(crate) async fn list_entity(&self, opt: ListOpt) -> Result<Vec<Entity>> {
@@ -60,7 +60,7 @@ impl DB {
         update_group(&self.pool, id, new_description).await
     }
 
-    pub(crate) async fn get_group(&self, opt: GetOpt) -> Result<Option<Group>> {
+    pub(crate) async fn get_group<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Group>> {
         get_group(&self.pool, opt).await
     }
 
@@ -76,7 +76,7 @@ impl DB {
         update_feature(&self.pool, id, new_description).await
     }
 
-    pub(crate) async fn get_feature(&self, opt: GetOpt) -> Result<Option<Feature>> {
+    pub(crate) async fn get_feature<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Feature>> {
         get_feature(&self.pool, opt).await
     }
 
@@ -90,7 +90,7 @@ impl DB {
         mut entities: Vec<apply::Entity>,
     ) -> Result<()> {
         for ne in entities.drain(..) {
-            let e = get_entity(&mut *tx, GetOpt::Name(ne.name.clone())).await?;
+            let e = get_entity(&mut *tx, GetOpt::Name(&ne.name)).await?;
             match e {
                 Some(e) => {
                     if e.description != ne.description {
@@ -118,7 +118,7 @@ impl DB {
                 continue;
             };
 
-            let g = get_group(&mut *tx, GetOpt::Name(ng.name.clone())).await?;
+            let g = get_group(&mut *tx, GetOpt::Name(&ng.name)).await?;
             match g {
                 Some(g) => {
                     if g.description != ng.description {
@@ -126,7 +126,7 @@ impl DB {
                     }
                 }
                 None => {
-                    if let Some(e) = get_entity(&mut *tx, GetOpt::Name(entity_name)).await? {
+                    if let Some(e) = get_entity(&mut *tx, GetOpt::Name(&entity_name)).await? {
                         create_group(
                             &mut *tx,
                             CreateGroupOpt {
@@ -145,7 +145,7 @@ impl DB {
         Ok(())
     }
 
-    async fn apply_features(
+    async fn apply_features<'a>(
         &self,
         tx: &mut Transaction<'_, Sqlite>,
         mut features: Vec<apply::Feature>,
@@ -156,7 +156,7 @@ impl DB {
             } else {
                 continue;
             };
-            let feature = get_feature(&mut *tx, GetOpt::Name(nf.name.clone())).await?;
+            let feature = get_feature(&mut *tx, GetOpt::Name(&nf.name)).await?;
             match feature {
                 Some(feature) => {
                     if feature.description != nf.description {
@@ -164,7 +164,7 @@ impl DB {
                     }
                 }
                 None => {
-                    if let Some(g) = get_group(&mut *tx, GetOpt::Name(group_name)).await? {
+                    if let Some(g) = get_group(&mut *tx, GetOpt::Name(&group_name)).await? {
                         create_feature(
                             &mut *tx,
                             CreateFeatureOpt {
@@ -237,7 +237,7 @@ where
     }
 }
 
-async fn get_entity<'a, A>(conn: A, opt: GetOpt) -> Result<Option<Entity>>
+async fn get_entity<'a, A>(conn: A, opt: GetOpt<'a>) -> Result<Option<Entity>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -351,7 +351,7 @@ where
     }
 }
 
-async fn get_group<'a, A>(conn: A, opt: GetOpt) -> Result<Option<Group>>
+async fn get_group<'a, A>(conn: A, opt: GetOpt<'a>) -> Result<Option<Group>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -464,7 +464,7 @@ where
     }
 }
 
-async fn get_feature<'a, A>(conn: A, opt: GetOpt) -> Result<Option<Feature>>
+async fn get_feature<'a, A>(conn: A, opt: GetOpt<'a>) -> Result<Option<Feature>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
@@ -576,7 +576,7 @@ mod tests {
         assert_eq!(entity.name, "name");
         assert_eq!(entity.description, "description");
 
-        let entity = super::get_entity(&db.pool, GetOpt::Name("name".to_owned()))
+        let entity = super::get_entity(&db.pool, GetOpt::Name(&"name"))
             .await
             .unwrap()
             .unwrap();
@@ -584,7 +584,7 @@ mod tests {
         assert_eq!(entity.name, "name");
         assert_eq!(entity.description, "description");
 
-        let res = super::get_entity(&db.pool, GetOpt::Name("not_exist".to_owned()))
+        let res = super::get_entity(&db.pool, GetOpt::Name(&"not_exist"))
             .await
             .unwrap();
         assert!(res.is_none());
@@ -761,7 +761,7 @@ mod tests {
             .unwrap();
         assert_eq_of_group(&group, &group_zero);
 
-        let group = super::get_group(&db.pool, GetOpt::Name(group_zero.name.clone()))
+        let group = super::get_group(&db.pool, GetOpt::Name(&group_zero.name))
             .await
             .unwrap()
             .unwrap();
@@ -770,7 +770,7 @@ mod tests {
         let res = super::get_group(&db.pool, GetOpt::ID(id + 1)).await;
         assert!(res.is_ok_and(|res| res.is_none()));
 
-        let res = super::get_group(&db.pool, GetOpt::Name("not_exist".to_owned())).await;
+        let res = super::get_group(&db.pool, GetOpt::Name(&"not_exist")).await;
         assert!(res.is_ok_and(|res| res.is_none()));
     }
 
@@ -1003,7 +1003,7 @@ mod tests {
         assert_eq!(feature.group_id, group_id);
         assert_eq!(feature.description, "description".to_owned());
 
-        let feature = super::get_feature(&db.pool, GetOpt::Name("feature".to_owned()))
+        let feature = super::get_feature(&db.pool, GetOpt::Name(&"feature"))
             .await
             .unwrap()
             .unwrap();

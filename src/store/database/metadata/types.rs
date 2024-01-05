@@ -111,9 +111,9 @@ pub enum Category {
     Stream,
 }
 
-pub enum GetOpt {
+pub enum GetOpt<'a> {
     ID(i64),
-    Name(String),
+    Name(&'a str),
 }
 
 pub enum ListOpt {

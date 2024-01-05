@@ -39,15 +39,15 @@ impl Store {
         self.metadata.update_entity(id, new_description).await
     }
 
-    pub async fn get_entity(&self, opt: GetOpt) -> Result<Option<Entity>> {
+    pub async fn get_entity<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Entity>> {
         self.metadata.get_entity(opt).await
     }
 
-    pub async fn get_group(&self, opt: GetOpt) -> Result<Option<Group>> {
+    pub async fn get_group<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Group>> {
         self.metadata.get_group(opt).await
     }
 
-    pub async fn get_feature(&self, opt: GetOpt) -> Result<Option<Feature>> {
+    pub async fn get_feature<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Feature>> {
         self.metadata.get_feature(opt).await
     }
 

@@ -40,7 +40,7 @@ impl DataStore {
             Self::Sqlite(db) => db.update_entity(id, new_description).await,
         }
     }
-    pub(crate) async fn get_entity(&self, opt: GetOpt) -> Result<Option<Entity>> {
+    pub(crate) async fn get_entity<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Entity>> {
         match self {
             Self::Sqlite(db) => db.get_entity(opt).await,
         }
@@ -61,7 +61,7 @@ impl DataStore {
             Self::Sqlite(db) => db.update_group(id, new_description).await,
         }
     }
-    pub(crate) async fn get_group(&self, opt: GetOpt) -> Result<Option<Group>> {
+    pub(crate) async fn get_group<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Group>> {
         match self {
             Self::Sqlite(db) => db.get_group(opt).await,
         }
@@ -82,7 +82,7 @@ impl DataStore {
             Self::Sqlite(db) => db.update_feature(id, new_description).await,
         }
     }
-    pub(crate) async fn get_feature(&self, opt: GetOpt) -> Result<Option<Feature>> {
+    pub(crate) async fn get_feature<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Feature>> {
         match self {
             Self::Sqlite(db) => db.get_feature(opt).await,
         }
