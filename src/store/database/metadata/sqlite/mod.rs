@@ -39,6 +39,124 @@ impl DB {
         schema::create_trigger(&self.pool).await;
     }
 
+    pub(crate) async fn apply(&self, stage: Stage) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        match self.apply_internal(&mut tx, stage).await {
+            Ok(_) => tx.commit().await.map_err(|e| e.into()),
+            Err(_) => tx.rollback().await.map_err(|e| e.into()),
+        }
+    }
+
+    async fn apply_internal(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        mut stage: Stage,
+    ) -> Result<()> {
+        for e in stage.new_entities.drain(..) {
+            self.apply_entity(tx, e).await?;
+        }
+
+        for mut g in stage.new_groups.drain(..) {
+            let entity_name = match g.entity_name.take() {
+                Some(name) => name,
+                None => continue,
+            };
+            self.apply_group(tx, &entity_name, g).await?;
+        }
+
+        for mut f in stage.new_features.drain(..) {
+            let group_name = match f.group_name.take() {
+                Some(name) => name,
+                None => continue,
+            };
+            self.apply_feature(tx, &group_name, f).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn apply_entity(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        entity: apply::Entity,
+    ) -> Result<()> {
+        let old_entity = get_entity(&mut *tx, GetOpt::Name(&entity.name)).await?;
+
+        if let Some(oe) = old_entity {
+            if oe.description != entity.description {
+                update_entity(&mut *tx, oe.id, &entity.description).await?;
+            }
+            return Ok(());
+        }
+
+        create_entity(&mut *tx, &entity.name, &entity.description).await?;
+
+        Ok(())
+    }
+
+    async fn apply_group(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        entity_name: &str,
+        group: apply::Group,
+    ) -> Result<()> {
+        let old_group = get_group(&mut *tx, GetOpt::Name(&group.name)).await?;
+
+        if let Some(og) = old_group {
+            if og.description != group.description {
+                update_group(&mut *tx, og.id, &group.description).await?;
+            }
+            return Ok(());
+        }
+
+        if let Some(e) = get_entity(&mut *tx, GetOpt::Name(entity_name)).await? {
+            create_group(
+                &mut *tx,
+                CreateGroupOpt {
+                    entity_id: e.id,
+                    name: group.name,
+                    category: group.category,
+                    description: group.description,
+                },
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn apply_feature(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        group_name: &str,
+        feature: apply::Feature,
+    ) -> Result<()> {
+        let old_feature = get_feature(&mut *tx, GetOpt::Name(&feature.name)).await?;
+
+        if let Some(of) = old_feature {
+            if of.description != feature.description {
+                update_feature(&mut *tx, of.id, &feature.description).await?;
+            }
+            return Ok(());
+        }
+
+        if let Some(g) = get_group(&mut *tx, GetOpt::Name(group_name)).await? {
+            create_feature(
+                &mut *tx,
+                CreateFeatureOpt {
+                    group_id: g.id,
+                    feature_name: feature.name,
+                    description: feature.description,
+                    value_type: feature.value_type,
+                },
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) async fn create_entity(&self, name: &str, description: &str) -> Result<i64> {
         create_entity(&self.pool, name, description).await
     }
@@ -82,115 +200,6 @@ impl DB {
 
     pub(crate) async fn list_feature<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Feature>> {
         list_feature(&self.pool, opt).await
-    }
-
-    async fn apply_entities(
-        &self,
-        tx: &mut Transaction<'_, Sqlite>,
-        mut entities: Vec<apply::Entity>,
-    ) -> Result<()> {
-        for ne in entities.drain(..) {
-            let e = get_entity(&mut *tx, GetOpt::Name(&ne.name)).await?;
-            match e {
-                Some(e) => {
-                    if e.description != ne.description {
-                        update_entity(&mut *tx, e.id, ne.description.as_str()).await?;
-                    }
-                }
-                None => {
-                    create_entity(&mut *tx, ne.name.as_str(), ne.description.as_str()).await?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn apply_groups(
-        &self,
-        tx: &mut Transaction<'_, Sqlite>,
-        mut groups: Vec<apply::Group>,
-    ) -> Result<()> {
-        for ng in groups.drain(..) {
-            let entity_name = if let Some(name) = ng.entity_name {
-                name
-            } else {
-                continue;
-            };
-
-            let g = get_group(&mut *tx, GetOpt::Name(&ng.name)).await?;
-            match g {
-                Some(g) => {
-                    if g.description != ng.description {
-                        update_group(&mut *tx, g.id, ng.description.as_str()).await?;
-                    }
-                }
-                None => {
-                    if let Some(e) = get_entity(&mut *tx, GetOpt::Name(&entity_name)).await? {
-                        create_group(
-                            &mut *tx,
-                            CreateGroupOpt {
-                                entity_id: e.id,
-                                name: ng.name,
-                                category: ng.category,
-                                description: ng.description,
-                            },
-                        )
-                        .await?;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn apply_features<'a>(
-        &self,
-        tx: &mut Transaction<'_, Sqlite>,
-        mut features: Vec<apply::Feature>,
-    ) -> Result<()> {
-        for nf in features.drain(..) {
-            let group_name = if let Some(name) = nf.group_name {
-                name
-            } else {
-                continue;
-            };
-            let feature = get_feature(&mut *tx, GetOpt::Name(&nf.name)).await?;
-            match feature {
-                Some(feature) => {
-                    if feature.description != nf.description {
-                        update_feature(&mut *tx, feature.id, nf.description.as_str()).await?;
-                    }
-                }
-                None => {
-                    if let Some(g) = get_group(&mut *tx, GetOpt::Name(&group_name)).await? {
-                        create_feature(
-                            &mut *tx,
-                            CreateFeatureOpt {
-                                group_id: g.id,
-                                feature_name: nf.name,
-                                description: nf.description,
-                                value_type: nf.value_type,
-                            },
-                        )
-                        .await?;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    pub(crate) async fn apply(&self, stage: Stage) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
-
-        self.apply_entities(&mut tx, stage.new_entities).await?;
-        self.apply_groups(&mut tx, stage.new_groups).await?;
-        self.apply_features(&mut tx, stage.new_features).await?;
-
-        tx.commit().await.map_err(|e| e.into())
     }
 }
 
