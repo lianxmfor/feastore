@@ -35,16 +35,19 @@ impl DataStore {
             Self::Sqlite(db) => db.create_entity(name, description).await,
         }
     }
+
     pub(crate) async fn update_entity(&self, id: i64, new_description: &str) -> Result<()> {
         match self {
             Self::Sqlite(db) => db.update_entity(id, new_description).await,
         }
     }
+
     pub(crate) async fn get_entity<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Entity>> {
         match self {
             Self::Sqlite(db) => db.get_entity(opt).await,
         }
     }
+
     pub(crate) async fn list_entity<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Entity>> {
         match self {
             Self::Sqlite(db) => db.list_entity(opt).await,
@@ -56,16 +59,19 @@ impl DataStore {
             Self::Sqlite(db) => db.create_group(group).await,
         }
     }
+
     pub(crate) async fn update_group(&self, id: i64, new_description: &str) -> Result<()> {
         match self {
             Self::Sqlite(db) => db.update_group(id, new_description).await,
         }
     }
+
     pub(crate) async fn get_group<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Group>> {
         match self {
             Self::Sqlite(db) => db.get_group(opt).await,
         }
     }
+
     pub(crate) async fn list_group<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Group>> {
         match self {
             Self::Sqlite(db) => db.list_group(opt).await,
@@ -77,21 +83,25 @@ impl DataStore {
             Self::Sqlite(db) => db.create_feature(feature).await,
         }
     }
+
     pub(crate) async fn update_feature(&self, id: i64, new_description: &str) -> Result<()> {
         match self {
             Self::Sqlite(db) => db.update_feature(id, new_description).await,
         }
     }
+
     pub(crate) async fn get_feature<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Feature>> {
         match self {
             Self::Sqlite(db) => db.get_feature(opt).await,
         }
     }
+
     pub(crate) async fn list_feature<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Feature>> {
         match self {
             Self::Sqlite(db) => db.list_feature(opt).await,
         }
     }
+
     pub(crate) async fn apply(&self, stage: apply::Stage) -> Result<()> {
         match self {
             Self::Sqlite(db) => db.apply(stage).await,

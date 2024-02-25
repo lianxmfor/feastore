@@ -10,6 +10,9 @@ pub enum Error {
     SqlxError(String),
 
     #[error("{0}")]
+    InvaidItem(String),
+
+    #[error("{0}")]
     Other(String),
 }
 
