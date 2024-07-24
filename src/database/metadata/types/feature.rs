@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 
 #[derive(sqlx::FromRow, Default, Clone)]
 pub struct Feature {
@@ -60,9 +60,9 @@ impl std::convert::From<&str> for FeatureValueType {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::*;
-
+    use super::FeatureValueType;
     #[test]
     fn convert_to_feature_value_type_work() {
         let test_cases = vec![
@@ -74,7 +74,7 @@ mod tests {
             ("time", FeatureValueType::Time),
             ("bytes", FeatureValueType::Bytes),
             ("", FeatureValueType::Invalid),
-        ];   
+        ];
 
         for (literal, value) in test_cases {
             let get_value: FeatureValueType = literal.into();

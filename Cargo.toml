@@ -3,7 +3,18 @@ name = "feastore"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "feacli"
+path = "src/bin/feacli/main.rs"
+
 [dependencies]
 chrono = "0.4.38"
+phf = { version = "0.11.2", features = ["macros"] }
 serde = { version = "1.0.204", features = ["derive"] }
+serde_with = "3.9.0"
+serde_yaml = "0.9.34"
 sqlx = { version = "0.7.4", features = ["runtime-tokio-native-tls", "sqlite", "chrono"] }
+thiserror = "1.0.63"
