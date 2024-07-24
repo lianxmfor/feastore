@@ -140,7 +140,7 @@ impl ApplyStage {
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
-pub struct Feature {
+pub(crate) struct Feature {
     pub kind: Option<String>,
     pub name: String,
     #[serde(rename(serialize = "group-name", deserialize = "group-name"))]
@@ -164,7 +164,7 @@ impl Feature {
 
 #[serde_as]
 #[derive(Deserialize, Debug, PartialEq)]
-pub struct Group {
+pub(crate) struct Group {
     kind: Option<String>,
     pub name: String,
     #[serde(rename(serialize = "entity-name", deserialize = "entity-name"))]
@@ -194,7 +194,7 @@ impl Group {
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
-pub struct Entity {
+pub(crate) struct Entity {
     kind: Option<String>,
     pub name: String,
     pub description: String,

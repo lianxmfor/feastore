@@ -10,6 +10,13 @@ path = "src/lib.rs"
 name = "feacli"
 path = "src/bin/feacli/main.rs"
 
+[workspace]
+members = ["src/proc_macros"]
+
+[dependencies.feastore-proc_macros]
+path = "src/proc_macros"
+version = "0.1.0"
+
 [dependencies]
 chrono = "0.4.38"
 phf = { version = "0.11.2", features = ["macros"] }

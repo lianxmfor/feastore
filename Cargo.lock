@@ -366,12 +366,21 @@ name = "feastore"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "feastore-proc_macros",
  "phf",
  "serde",
  "serde_with",
  "serde_yaml",
  "sqlx",
  "thiserror",
+]
+
+[[package]]
+name = "feastore-proc_macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 2.0.71",
 ]
 
 [[package]]
