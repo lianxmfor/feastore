@@ -18,10 +18,14 @@ path = "src/proc_macros"
 version = "0.1.0"
 
 [dependencies]
-chrono = "0.4.38"
+chrono = { version = "0.4.38", features = ["serde"] }
+clap = { version = "4.5.10", features = ["derive"] }
+csv = "1.3.0"
 phf = { version = "0.11.2", features = ["macros"] }
+prettytable-rs = "0.10.0"
 serde = { version = "1.0.204", features = ["derive"] }
 serde_with = "3.9.0"
 serde_yaml = "0.9.34"
 sqlx = { version = "0.7.4", features = ["runtime-tokio-native-tls", "sqlite", "chrono"] }
 thiserror = "1.0.63"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 
-#[derive(sqlx::FromRow, Default, Clone)]
+#[derive(sqlx::FromRow, Default, Clone, Serialize, Deserialize)]
 pub struct Feature {
     pub id: i64,
     pub name: String,
@@ -32,7 +33,7 @@ impl std::convert::From<Feature> for CreateFeatureOpt {
     }
 }
 
-#[derive(Deserialize, sqlx::Type, Default, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, sqlx::Type, Default, PartialEq, Debug, Clone, ValueEnum)]
 #[serde(rename_all(serialize = "lowercase", deserialize = "lowercase"))]
 pub enum FeatureValueType {
     #[default]

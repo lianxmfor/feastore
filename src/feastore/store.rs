@@ -1,4 +1,6 @@
-use crate::database::metadata::{DataStore, Entity, Feature, GetOpt, Group, ListOpt};
+use crate::database::metadata::{
+    CreateFeatureOpt, CreateGroupOpt, DataStore, Entity, Feature, GetOpt, Group, ListOpt,
+};
 use crate::feastore::{apply, FeatureStoreConfig, Result};
 
 pub struct Store {
@@ -41,12 +43,37 @@ impl Store {
         self.metadata.get_entity(opt).await.map_err(|e| e.into())
     }
 
+    pub async fn create_group(&self, opt: CreateGroupOpt) -> Result<i64> {
+        self.metadata.create_group(opt).await.map_err(|e| e.into())
+    }
+
     pub async fn get_group<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Group>> {
         self.metadata.get_group(opt).await.map_err(|e| e.into())
     }
 
+    pub async fn update_group(&self, id: i64, new_description: &str) -> Result<()> {
+        self.metadata
+            .update_group(id, new_description)
+            .await
+            .map_err(|e| e.into())
+    }
+
+    pub async fn create_feature(&self, opt: CreateFeatureOpt) -> Result<i64> {
+        self.metadata
+            .create_feature(opt)
+            .await
+            .map_err(|e| e.into())
+    }
+
     pub async fn get_feature<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Feature>> {
         self.metadata.get_feature(opt).await.map_err(|e| e.into())
+    }
+
+    pub async fn update_feature(&self, id: i64, new_description: &str) -> Result<()> {
+        self.metadata
+            .update_feature(id, new_description)
+            .await
+            .map_err(|e| e.into())
     }
 
     pub async fn list_entity<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Entity>> {

@@ -3,6 +3,8 @@ mod error;
 mod opt;
 mod store;
 
+pub use store::Store;
+
 pub use opt::BackendOpt;
 pub use opt::FeatureStoreConfig;
 

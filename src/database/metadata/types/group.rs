@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
-#[derive(sqlx::FromRow, Default, Clone)]
+#[derive(sqlx::FromRow, Default, Clone, Serialize, Deserialize)]
 pub struct Group {
     pub id: i64,
     pub name: String,
@@ -32,7 +33,7 @@ impl From<Group> for CreateGroupOpt {
     }
 }
 
-#[derive(sqlx::Type, Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(sqlx::Type, Default, PartialEq, Debug, Clone, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum GroupCategory {
     #[default]
