@@ -14,13 +14,14 @@ pub static META_TABLE_SCHEMAS: phf::Map<&'static str, &'static str> = phf_map! {
     "#,
     "feature_group" => r#"
         CREATE TABLE IF NOT EXISTS feature_group (
-            id              INTEGER         NOT NULL PRIMARY KEY AUTOINCREMENT,
-            name            VARCHAR(32)     NOT NULL,
-            category        VARCHAR(16)     NOT NULL,
-            entity_id       INT             NOT NULL,
-            description     VARCHAR(64)     DEFAULT '',
-            create_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            modify_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            id                INTEGER         NOT NULL PRIMARY KEY AUTOINCREMENT,
+            name              VARCHAR(32)     NOT NULL,
+            category          VARCHAR(16)     NOT NULL,
+            entity_id         INT             NOT NULL,
+            snapshot_interval INT,
+            description       VARCHAR(64)     DEFAULT '',
+            create_time       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            modify_time       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(name),
             FOREIGN KEY (entity_id) REFERENCES entity(id)
         )

@@ -87,4 +87,23 @@ impl Store {
     pub async fn list_feature<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Feature>> {
         self.metadata.list_feature(opt).await.map_err(|e| e.into())
     }
+
+    pub async fn list_entity_with_full_information<'a>(
+        &self,
+        opt: ListOpt<'a>,
+    ) -> Result<Vec<Entity>> {
+        self.metadata
+            .list_entities_with_full_information(opt)
+            .await
+            .map_err(|e| e.into())
+    }
+    pub async fn list_group_with_full_information<'a>(
+        &self,
+        opt: ListOpt<'a>,
+    ) -> Result<Vec<Group>> {
+        self.metadata
+            .list_group_with_full_information(opt)
+            .await
+            .map_err(|e| e.into())
+    }
 }

@@ -2,14 +2,14 @@ use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 
 use crate::database::metadata::sqlite::schema;
 use crate::database::metadata::{
-    CreateFeatureOpt, CreateGroupOpt, Entity, Feature, GetOpt, Group, ListOpt,
+    ApplyEntity, ApplyFeature, ApplyGroup, CreateFeatureOpt, CreateGroupOpt, Entity, Feature,
+    GetOpt, Group, ListOpt,
 };
 use crate::database::{Error, Result, SQLiteOpt};
-use crate::feastore::apply;
 use crate::feastore::apply::ApplyStage;
 
 pub struct DB {
-    pub pool: SqlitePool,
+    pool: SqlitePool,
 }
 
 impl DB {
@@ -25,10 +25,6 @@ impl DB {
 
     pub(crate) async fn close(&self) {
         self.pool.close().await;
-    }
-
-    fn from_pool(pool: SqlitePool) -> Self {
-        Self { pool }
     }
 
     async fn create_schemas(&self) {
@@ -63,21 +59,60 @@ impl DB {
             self.apply_group(tx, &entity_name, g).await?;
         }
 
-        for mut f in stage.new_features.drain(..) {
-            let group_name = match f.group_name.take() {
-                Some(name) => name,
-                None => continue,
-            };
-            self.apply_feature(tx, &group_name, f).await?;
+        for f in stage.new_features.drain(..) {
+            self.apply_feature(tx, f).await?;
         }
 
         Ok(())
     }
 
+    pub(crate) async fn list_entity_with_full_information<'a>(
+        &self,
+        opt: ListOpt<'a>,
+    ) -> Result<Vec<Entity>> {
+        let entities = list_entity(&self.pool, opt).await?;
+        let groups = self.list_groups_with_full_information(ListOpt::All).await?;
+
+        let mut res = vec![];
+        for mut entity in entities {
+            let the_groups = groups
+                .iter()
+                .filter(|group| group.entity_name == entity.name)
+                .map(|group| group.clone())
+                .collect::<Vec<Group>>();
+            entity.groups = Some(the_groups);
+
+            res.push(entity);
+        }
+        Ok(res)
+    }
+
+    pub(crate) async fn list_groups_with_full_information<'a>(
+        &self,
+        opt: ListOpt<'a>,
+    ) -> Result<Vec<Group>> {
+        let groups = self.list_group(opt).await?;
+        let features = self.list_feature(ListOpt::All).await?; // FIXME: use sql to filter features other than code
+
+        let mut res = vec![];
+        for mut group in groups {
+            let the_features = features
+                .iter()
+                .filter(|feature| feature.group_id == group.id)
+                .map(|feature| feature.clone())
+                .collect::<Vec<Feature>>();
+            group.features = Some(the_features);
+
+            res.push(group);
+        }
+
+        Ok(res)
+    }
+
     async fn apply_entity(
         &self,
         tx: &mut Transaction<'_, Sqlite>,
-        entity: apply::Entity,
+        entity: ApplyEntity,
     ) -> Result<()> {
         let old_entity = get_entity(&mut *tx, GetOpt::Name(&entity.name)).await?;
 
@@ -97,7 +132,7 @@ impl DB {
         &self,
         tx: &mut Transaction<'_, Sqlite>,
         entity_name: &str,
-        group: apply::Group,
+        group: ApplyGroup,
     ) -> Result<()> {
         let old_group = get_group(&mut *tx, GetOpt::Name(&group.name)).await?;
 
@@ -115,6 +150,7 @@ impl DB {
                     entity_id: e.id,
                     name: group.name,
                     category: group.category,
+                    snapshot_interval: group.snapshot_interval.map(|i| i.as_secs() as i32),
                     description: group.description,
                 },
             )
@@ -127,8 +163,7 @@ impl DB {
     async fn apply_feature(
         &self,
         tx: &mut Transaction<'_, Sqlite>,
-        group_name: &str,
-        feature: apply::Feature,
+        feature: ApplyFeature,
     ) -> Result<()> {
         let old_feature = get_feature(&mut *tx, GetOpt::Name(&feature.name)).await?;
 
@@ -139,17 +174,19 @@ impl DB {
             return Ok(());
         }
 
-        if let Some(g) = get_group(&mut *tx, GetOpt::Name(group_name)).await? {
-            create_feature(
-                &mut *tx,
-                CreateFeatureOpt {
-                    group_id: g.id,
-                    feature_name: feature.name,
-                    description: feature.description,
-                    value_type: feature.value_type,
-                },
-            )
-            .await?;
+        if let Some(group_name) = feature.group_name {
+            if let Some(g) = get_group(&mut *tx, GetOpt::Name(&group_name)).await? {
+                create_feature(
+                    &mut *tx,
+                    CreateFeatureOpt {
+                        group_id: g.id,
+                        feature_name: feature.name,
+                        description: feature.description,
+                        value_type: feature.value_type,
+                    },
+                )
+                .await?;
+            }
         }
 
         Ok(())
@@ -314,10 +351,11 @@ where
     let mut conn = conn.acquire().await?;
 
     let res = sqlx::query(
-        "INSERT INTO feature_group (name, category, description, entity_id) VALUES (?, ?, ?, ?)",
+        "INSERT INTO feature_group (name, category, snapshot_interval, description, entity_id) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(&group.name)
     .bind(group.category)
+    .bind(group.snapshot_interval)
     .bind(group.description)
     .bind(group.entity_id)
     .execute(&mut *conn)
@@ -363,11 +401,19 @@ where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
     let mut conn = conn.acquire().await?;
+    let mut query_str = r#"
+        SELECT g.id, g.name, e.name as entity_name, g.category, g.entity_id, g.snapshot_interval, g.description, g.create_time, g.modify_time
+        FROM feature_group as g LEFT JOIN entity as e on g.entity_id = e.id
+    "#.to_string();
 
     let query = match opt {
-        GetOpt::ID(id) => sqlx::query_as("SELECT * FROM feature_group WHERE id = ?").bind(id),
+        GetOpt::ID(id) => {
+            query_str = format!("{query_str} WHERE g.id = ?");
+            sqlx::query_as(&query_str).bind(id)
+        }
         GetOpt::Name(name) => {
-            sqlx::query_as("SELECT * FROM feature_group WHERE name = ?").bind(name)
+            query_str = format!("{query_str} WHERE g.name = ?");
+            sqlx::query_as(&query_str).bind(name)
         }
     };
 
@@ -380,7 +426,9 @@ where
 {
     let mut conn = conn.acquire().await?;
 
-    let mut query_str = "SELECT * FROM feature_group".to_owned();
+    let mut query_str = r#"
+        SELECT g.id, g.name, e.name as entity_name, g.category, g.entity_id, g.snapshot_interval, g.description, g.create_time, g.modify_time
+        FROM feature_group as g LEFT JOIN entity as e on g.entity_id = e.id"#.to_string();
 
     let query = match opt {
         ListOpt::All => sqlx::query(&query_str),
@@ -389,7 +437,10 @@ where
                 return Ok(Vec::new());
             }
 
-            query_str = format!("{query_str} WHERE id in (?{})", ", ?".repeat(ids.len() - 1));
+            query_str = format!(
+                "{query_str} WHERE g.id in (?{})",
+                ", ?".repeat(ids.len() - 1)
+            );
             let mut query = sqlx::query(&query_str);
             for id in ids {
                 query = query.bind(id);
@@ -402,7 +453,7 @@ where
             }
 
             query_str = format!(
-                "{query_str} WHERE name in (?{})",
+                "{query_str} WHERE g.name in (?{})",
                 ", ?".repeat(names.len() - 1)
             );
             let mut query = sqlx::query(&query_str);
@@ -476,10 +527,19 @@ where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
     let mut conn = conn.acquire().await?;
+    let mut query_str = r#"
+            SELECT f.id, f.name, g.name as group_name, f.group_id, f.value_type, f.description, f.create_time, f.modify_time
+            FROM feature as f left join feature_group as g on f.group_id = g.id "#.to_owned();
 
     let query = match opt {
-        GetOpt::ID(id) => sqlx::query_as("SELECT * FROM feature WHERE id = ?").bind(id),
-        GetOpt::Name(name) => sqlx::query_as("SELECT * FROM feature WHERE name = ?").bind(name),
+        GetOpt::ID(id) => {
+            query_str = format!("{query_str} WHERE f.id = ?");
+            sqlx::query_as(&query_str).bind(id)
+        }
+        GetOpt::Name(name) => {
+            query_str = format!("{query_str} WHERE f.name = ?");
+            sqlx::query_as(&query_str).bind(name)
+        }
     };
 
     Ok(query.fetch_optional(&mut *conn).await?)
@@ -490,8 +550,9 @@ where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
     let mut conn = conn.acquire().await?;
-
-    let mut query_str = "SELECT * FROM feature".to_owned();
+    let mut query_str = r#"
+            SELECT f.id, f.name, g.name as group_name, f.group_id, f.value_type, f.description, f.create_time, f.modify_time
+            FROM feature as f left join feature_group as g on f.group_id = g.id "#.to_owned();
 
     let query = match opt {
         ListOpt::All => sqlx::query(&query_str),
@@ -500,7 +561,10 @@ where
                 return Ok(Vec::new());
             }
 
-            query_str = format!("{query_str} WHERE id in (?{})", ", ?".repeat(ids.len() - 1));
+            query_str = format!(
+                "{query_str} WHERE f.id in (?{})",
+                ", ?".repeat(ids.len() - 1)
+            );
 
             let mut query = sqlx::query(&query_str);
             for id in ids {
@@ -514,7 +578,7 @@ where
             }
 
             query_str = format!(
-                "{query_str} WHERE name in (?{})",
+                "{query_str} WHERE f.name in (?{})",
                 ", ?".repeat(names.len() - 1)
             );
             let mut query = sqlx::query(&query_str);
@@ -695,6 +759,7 @@ mod tests {
             CreateGroupOpt {
                 name: "name".to_owned(),
                 category: GroupCategory::Batch,
+                snapshot_interval: None,
                 description: "description".to_owned(),
                 entity_id,
             },
@@ -707,6 +772,7 @@ mod tests {
             CreateGroupOpt {
                 name: "name1".to_owned(),
                 category: GroupCategory::Stream,
+                snapshot_interval: None,
                 description: "description".to_owned(),
                 entity_id,
             },
@@ -719,6 +785,7 @@ mod tests {
             CreateGroupOpt {
                 name: "name".to_owned(),
                 category: GroupCategory::Batch,
+                snapshot_interval: None,
                 description: "description".to_owned(),
                 entity_id,
             },
@@ -742,6 +809,7 @@ mod tests {
             id: 1,
             name: "name".to_owned(),
             category: GroupCategory::Batch,
+            snapshot_interval: Some(123),
             description: "description".to_owned(),
             entity_id,
             ..Default::default()
@@ -773,6 +841,7 @@ mod tests {
         assert_eq!(left.id, right.id);
         assert_eq!(left.name, right.name);
         assert_eq!(left.category, right.category);
+        assert_eq!(left.snapshot_interval, right.snapshot_interval);
         assert_eq!(left.description, right.description);
     }
 
@@ -796,6 +865,7 @@ mod tests {
             id: 1,
             name: "name".to_owned(),
             category: GroupCategory::Batch,
+            snapshot_interval: Some(123456),
             description: "description".to_owned(),
             entity_id,
             ..Default::default()
@@ -809,10 +879,15 @@ mod tests {
         let group = super::get_group(&db.pool, GetOpt::ID(group_id))
             .await
             .unwrap();
+
+        if let Some(ref group) = group {
+            assert_eq!(group.snapshot_interval, origin_group.snapshot_interval);
+        }
         assert!(group.is_some_and(|g| {
             g.id == origin_group.id
                 && g.entity_id == origin_group.entity_id
                 && g.category == origin_group.category
+                && g.snapshot_interval == origin_group.snapshot_interval
                 && g.name == origin_group.name
                 && g.description == "new_description"
         }));
@@ -835,6 +910,7 @@ mod tests {
                 entity_id,
                 name: "name1".to_owned(),
                 category: GroupCategory::Batch,
+                snapshot_interval: None,
                 description: "description".to_owned()
             }
         )
@@ -849,6 +925,7 @@ mod tests {
                 entity_id,
                 name: "name2".to_owned(),
                 category: GroupCategory::Batch,
+                snapshot_interval: None,
                 description: "description".to_owned()
             }
         )
@@ -880,6 +957,7 @@ mod tests {
             CreateGroupOpt {
                 entity_id,
                 category: GroupCategory::Batch,
+                snapshot_interval: None,
                 name: "group_name".to_owned(),
                 description: "description".to_owned(),
             },
@@ -932,6 +1010,7 @@ mod tests {
             CreateGroupOpt {
                 entity_id,
                 category: GroupCategory::Batch,
+                snapshot_interval: None,
                 name: "new_group_name".to_owned(),
                 description: "description".to_owned(),
             },
@@ -963,6 +1042,7 @@ mod tests {
             CreateGroupOpt {
                 entity_id,
                 category: GroupCategory::Batch,
+                snapshot_interval: None,
                 name: "new_group_name".to_owned(),
                 description: "description".to_owned(),
             },
@@ -1023,6 +1103,7 @@ mod tests {
             CreateGroupOpt {
                 entity_id,
                 category: GroupCategory::Batch,
+                snapshot_interval: None,
                 name: "name".to_owned(),
                 description: "description".to_owned(),
             },
@@ -1078,6 +1159,7 @@ mod tests {
             CreateGroupOpt {
                 entity_id,
                 category: GroupCategory::Batch,
+                snapshot_interval: None,
                 name: "name".to_owned(),
                 description: "description".to_owned(),
             },

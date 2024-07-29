@@ -104,4 +104,22 @@ impl DataStore {
             Self::Sqlite(db) => db.apply(stage).await,
         }
     }
+
+    pub(crate) async fn list_entities_with_full_information<'a>(
+        &self,
+        opt: ListOpt<'a>,
+    ) -> Result<Vec<Entity>> {
+        match self {
+            Self::Sqlite(db) => db.list_entity_with_full_information(opt).await,
+        }
+    }
+
+    pub(crate) async fn list_group_with_full_information<'a>(
+        &self,
+        opt: ListOpt<'a>,
+    ) -> Result<Vec<Group>> {
+        match self {
+            Self::Sqlite(db) => db.list_groups_with_full_information(opt).await,
+        }
+    }
 }
