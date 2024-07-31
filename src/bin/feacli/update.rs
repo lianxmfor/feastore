@@ -1,7 +1,7 @@
 use clap::{Args, Subcommand};
 
 use feastore::database::metadata::GetOpt;
-use feastore::Store;
+use feastore::{Result, Store};
 
 #[derive(Args)]
 pub struct UpdateCommand {
@@ -38,7 +38,7 @@ struct UpdateFeature {
 }
 
 impl UpdateCommand {
-    pub async fn run(self, store: Store) {
+    pub async fn run(self, store: Store) -> Result<()> {
         match self.cmds {
             SubCmd::Entity(entity) => update_entity(entity, store).await,
             SubCmd::Group(group) => update_group(group, store).await,
@@ -47,42 +47,33 @@ impl UpdateCommand {
     }
 }
 
-async fn update_entity(entity: UpdateEntity, store: Store) {
+async fn update_entity(entity: UpdateEntity, store: Store) -> Result<()> {
     let entity_id = if let Ok(Some(entity)) = store.get_entity(GetOpt::Name(&entity.name)).await {
         entity.id
     } else {
-        return;
+        return Ok(());
     };
 
-    store
-        .update_entity(entity_id, &entity.description)
-        .await
-        .unwrap();
+    store.update_entity(entity_id, &entity.description).await
 }
 
-async fn update_group(group: UpdateGroup, store: Store) {
+async fn update_group(group: UpdateGroup, store: Store) -> Result<()> {
     let group_id = if let Ok(Some(group)) = store.get_group(GetOpt::Name(&group.name)).await {
         group.id
     } else {
-        return;
+        return Ok(());
     };
 
-    store
-        .update_group(group_id, &group.description)
-        .await
-        .unwrap();
+    store.update_group(group_id, &group.description).await
 }
 
-async fn update_feature(feature: UpdateFeature, store: Store) {
+async fn update_feature(feature: UpdateFeature, store: Store) -> Result<()> {
     let feature_id = if let Ok(Some(feature)) = store.get_feature(GetOpt::Name(&feature.name)).await
     {
         feature.id
     } else {
-        return;
+        return Ok(());
     };
 
-    store
-        .update_feature(feature_id, &feature.description)
-        .await
-        .unwrap();
+    store.update_feature(feature_id, &feature.description).await
 }

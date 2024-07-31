@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 use feastore::database::metadata::{
     CreateFeatureOpt, CreateGroupOpt, FeatureValueType, GetOpt, GroupCategory,
 };
-use feastore::Store;
+use feastore::{Result, Store};
 
 #[derive(Args)]
 pub struct RegisterCommand {
@@ -52,7 +52,7 @@ struct RegisterFeature {
 }
 
 impl RegisterCommand {
-    pub async fn run(self, store: Store) {
+    pub async fn run(self, store: Store) -> Result<()> {
         match self.cmds {
             SubCmd::Entity(entity) => register_entity(entity, store).await,
             SubCmd::Group(group) => register_group(group, store).await,
@@ -61,18 +61,18 @@ impl RegisterCommand {
     }
 }
 
-async fn register_entity(entity: RegisterEntity, store: Store) {
+async fn register_entity(entity: RegisterEntity, store: Store) -> Result<()> {
     store
         .create_entity(&entity.name, &entity.description)
         .await
-        .unwrap();
+        .map(|_| ())
 }
 
-async fn register_group(group: RegisterGroup, store: Store) {
+async fn register_group(group: RegisterGroup, store: Store) -> Result<()> {
     let entity_id = if let Ok(Some(entity)) = store.get_entity(GetOpt::Name(&group.entity)).await {
         entity.id
     } else {
-        return;
+        return Ok(());
     };
 
     let opt = CreateGroupOpt {
@@ -83,14 +83,14 @@ async fn register_group(group: RegisterGroup, store: Store) {
         description: group.description,
     };
 
-    store.create_group(opt).await.unwrap();
+    store.create_group(opt).await.map(|_| ())
 }
 
-async fn register_feature(feature: RegisterFeature, store: Store) {
+async fn register_feature(feature: RegisterFeature, store: Store) -> Result<()> {
     let group_id = if let Ok(Some(group)) = store.get_group(GetOpt::Name(&feature.group)).await {
         group.id
     } else {
-        return;
+        return Ok(());
     };
 
     let opt = CreateFeatureOpt {
@@ -100,5 +100,5 @@ async fn register_feature(feature: RegisterFeature, store: Store) {
         description: feature.description,
     };
 
-    store.create_feature(opt).await.unwrap();
+    store.create_feature(opt).await.map(|_| ())
 }

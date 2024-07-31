@@ -3,9 +3,10 @@ mod get;
 mod register;
 mod update;
 
+use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
 use feastore::{FeatureStoreConfig, Store};
 
 #[derive(Subcommand)]
@@ -36,20 +37,21 @@ fn default_config_file() -> PathBuf {
 }
 
 impl Cli {
-    pub async fn execute(self) {
-        let cfg = self.get_config();
+    pub async fn execute(self) -> Result<()> {
+        let cfg = self.get_config()?;
         let feastore = Store::open(cfg).await;
 
-        match self.command {
+        let result = match self.command {
             Commands::Apply(cmd) => cmd.run(feastore).await,
-            //Commands::Edit(cmd) => cmd.execute(feastore).await,
             Commands::Register(cmd) => cmd.run(feastore).await,
             Commands::Update(cmd) => cmd.run(feastore).await,
             Commands::Get(cmd) => cmd.run(feastore).await,
-        }
+        };
+
+        result.map_err(|err| err.into())
     }
 
-    fn get_config(&self) -> FeatureStoreConfig {
+    fn get_config(&self) -> Result<FeatureStoreConfig> {
         let settings = match self.config {
             Some(ref config_path) => {
                 let config_path = PathBuf::from(config_path);
@@ -61,7 +63,7 @@ impl Cli {
                             .separator("__"),
                     )
                     .build()
-                    .unwrap()
+                    .context("Failed to get config. make sure the config path or envs which has prefix FEASTORE_ is provided.")?
             }
             None => config::Config::builder()
                 .add_source(
@@ -70,15 +72,17 @@ impl Cli {
                         .separator("__"),
                 )
                 .build()
-                .unwrap(),
+                .context("Failed to get config. make sure the config path or envs which has prefix FEASTORE_ is provided.")?
         };
 
-        settings.try_deserialize().unwrap()
+        settings
+            .try_deserialize()
+            .context("Failed to deserialize config. make sure the config content is right")
     }
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     let cli = Cli::parse();
-    cli.execute().await;
+    cli.execute().await
 }

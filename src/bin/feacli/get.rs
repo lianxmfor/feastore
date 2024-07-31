@@ -3,8 +3,8 @@ use csv::Writer;
 use prettytable::Table;
 use serde::Serialize;
 
-use feastore::database::metadata::{ApplyEntity, ApplyFeature, ApplyGroup};
-use feastore::{database::metadata::ListOpt, Store};
+use feastore::database::metadata::{ApplyEntity, ApplyFeature, ApplyGroup, ListOpt};
+use feastore::{Result, Store};
 
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -43,7 +43,7 @@ enum Format {
 }
 
 impl Command {
-    pub async fn run(&self, store: Store) {
+    pub async fn run(&self, store: Store) -> Result<()> {
         match &self.cmds {
             SubCmd::Entity => self.get_entity(store).await,
             SubCmd::Group => self.get_group(store).await,
@@ -51,14 +51,13 @@ impl Command {
         }
     }
 
-    async fn get_entity(&self, store: Store) {
+    async fn get_entity(&self, store: Store) -> Result<()> {
         let opt = build_opt(&self.names);
         match self.output {
             Format::Yaml => {
                 let entities = store
                     .list_entity_with_full_information(opt)
-                    .await
-                    .expect("failed to get entities")
+                    .await?
                     .into_iter()
                     .map(|e| ApplyEntity::from(e))
                     .collect();
@@ -74,16 +73,16 @@ impl Command {
                 output(entities, &self.output);
             }
         }
+        Ok(())
     }
 
-    async fn get_group(&self, store: Store) {
+    async fn get_group(&self, store: Store) -> Result<()> {
         let opt = build_opt(&self.names);
         match self.output {
             Format::Yaml => {
                 let groups = store
                     .list_group_with_full_information(opt)
-                    .await
-                    .expect("failed to get groups")
+                    .await?
                     .into_iter()
                     .map(|g| ApplyGroup::from(g, true))
                     .collect();
@@ -91,21 +90,21 @@ impl Command {
                 output(groups, &self.output);
             }
             _ => {
-                let groups = store.list_group(opt).await.expect("failed to get groups");
+                let groups = store.list_group(opt).await?;
 
                 output(groups, &self.output);
             }
         }
+        Ok(())
     }
 
-    async fn get_feature(&self, store: Store) {
+    async fn get_feature(&self, store: Store) -> Result<()> {
         let opt = build_opt(&self.names);
         match self.output {
             Format::Yaml => {
                 let features = store
                     .list_feature(opt)
-                    .await
-                    .expect("failed to get features")
+                    .await?
                     .into_iter()
                     .map(|f| ApplyFeature::from(f, true))
                     .collect();
@@ -121,7 +120,13 @@ impl Command {
                 output(entities, &self.output);
             }
         }
+        Ok(())
     }
+}
+
+#[derive(Serialize)]
+struct Items<T: Serialize> {
+    items: Vec<T>,
 }
 
 fn output<T: Serialize>(values: Vec<T>, format: &Format) {
@@ -165,9 +170,4 @@ fn build_opt(names: &Vec<String>) -> ListOpt {
     } else {
         ListOpt::from(names)
     }
-}
-
-#[derive(Serialize)]
-struct Items<T: Serialize> {
-    items: Vec<T>,
 }

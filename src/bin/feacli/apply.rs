@@ -1,7 +1,7 @@
 use std::fs;
 
 use clap::Args;
-use feastore::Store;
+use feastore::{Result, Store};
 
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -12,12 +12,12 @@ pub struct ApplyCmd {
 }
 
 impl ApplyCmd {
-    pub async fn run(self, store: Store) {
+    pub async fn run(self, store: Store) -> Result<()> {
         let reader = fs::OpenOptions::new()
             .read(true)
             .open(&self.filepath)
-            .expect("open file failed.");
+            .unwrap();
 
-        store.apply(reader).await.expect("apply failed.")
+        store.apply(reader).await
     }
 }
