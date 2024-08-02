@@ -1,8 +1,10 @@
+#[derive(Debug)]
 pub enum GetOpt<'a> {
     ID(i64),
     Name(&'a str),
 }
 
+#[derive(Debug)]
 pub enum ListOpt<'a> {
     All,
     IDs(Vec<i64>),

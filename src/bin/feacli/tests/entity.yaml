@@ -1,0 +1,24 @@
+kind: Entity
+name: user
+description: 'description'
+---
+kind: Group
+name: device
+entity: user
+category: batch
+description: 'description'
+---
+kind: Feature
+name: model
+group: device
+category: batch
+value-type: string
+description: 'description'
+---
+kind: Feature
+name: price
+group: device
+category: batch
+value-type: int64
+description: 'description'
+

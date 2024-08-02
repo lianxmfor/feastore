@@ -16,7 +16,7 @@ pub struct Entity {
     pub groups: Option<Vec<Group>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(tag = "kind", rename = "Entity")]
 pub struct ApplyEntity {
     pub name: String,

@@ -1,10 +1,6 @@
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use serde_with::DurationSeconds;
-
-use std::time::Duration;
 
 use super::ApplyFeature;
 use super::Feature;
@@ -13,7 +9,11 @@ use super::Feature;
 pub struct Group {
     pub id: i64,
     pub name: String,
+    #[serde(rename(serialize = "entity", deserialize = "entity"))]
+    pub entity_name: String,
     pub category: GroupCategory,
+
+    #[serde(rename(serialize = "snapshot-interval", deserialize = "snapshot-interval"))]
     pub snapshot_interval: Option<i32>, // FIXME: use chrono::Duration repleace i32
 
     pub description: String,
@@ -21,33 +21,36 @@ pub struct Group {
     pub modify_time: DateTime<Utc>,
 
     pub entity_id: i64,
-    pub entity_name: String,
 
     #[sqlx(skip)]
     pub features: Option<Vec<Feature>>,
 }
 
-#[serde_as]
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
-#[serde(tag = "kind", rename = "Group")]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Default)]
 pub struct ApplyGroup {
-    pub name: String,
-    #[serde(rename(serialize = "entity-name", deserialize = "entity-name"))]
+    // just for printing, the value is always None or Some("Group")
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    pub name: String,
+    #[serde(
+        rename(serialize = "entity", deserialize = "entity"),
+        skip_serializing_if = "Option::is_none"
+    )]
     pub entity_name: Option<String>,
     pub category: GroupCategory,
-    #[serde(rename(serialize = "snapshot-interval", deserialize = "snapshot-interval"))]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO: instead serde_as with github.com/jsofhgujoifdjisiojpihhvjpkojjkp'jkbjjj'jojbkhvkbjljbjkbkj;kbjljlkj;kbjb nkkjbhvkhihugkvhhiugvgguhcgvgvhhgihhuhjihjlan-airoldie/humantime-serde
-    #[serde_as(as = "Option<DurationSeconds>")]
-    pub snapshot_interval: Option<Duration>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename(serialize = "snapshot-interval", deserialize = "snapshot-interval"),
+        default
+    )]
+    pub snapshot_interval: Option<i32>, // FIXME: use chrono::Duration repleace i32
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub features: Option<Vec<ApplyFeature>>,
 }
 
 impl ApplyGroup {
-    pub fn from(group: Group, need_group_name: bool) -> Self {
+    pub fn from(group: Group, full_information: bool) -> Self {
         let features = group.features.map(|features| {
             features
                 .into_iter()
@@ -56,16 +59,19 @@ impl ApplyGroup {
         });
 
         Self {
+            kind: if full_information {
+                Some("Group".to_string())
+            } else {
+                None
+            },
             name: group.name,
-            entity_name: if need_group_name {
+            entity_name: if full_information {
                 Some(group.entity_name)
             } else {
                 None
             },
             category: group.category,
-            snapshot_interval: group
-                .snapshot_interval
-                .map(|i| Duration::from_secs(i as u64)),
+            snapshot_interval: group.snapshot_interval,
             description: group.description,
             features,
         }

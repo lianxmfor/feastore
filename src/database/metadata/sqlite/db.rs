@@ -150,7 +150,7 @@ impl DB {
                     entity_id: e.id,
                     name: group.name,
                     category: group.category,
-                    snapshot_interval: group.snapshot_interval.map(|i| i.as_secs() as i32),
+                    snapshot_interval: group.snapshot_interval,
                     description: group.description,
                 },
             )
@@ -528,7 +528,7 @@ where
 {
     let mut conn = conn.acquire().await?;
     let mut query_str = r#"
-            SELECT f.id, f.name, g.name as group_name, f.group_id, f.value_type, f.description, f.create_time, f.modify_time
+            SELECT f.id, f.name, g.name as group_name, g.category as category, f.group_id, f.value_type, f.description, f.create_time, f.modify_time
             FROM feature as f left join feature_group as g on f.group_id = g.id "#.to_owned();
 
     let query = match opt {
@@ -551,7 +551,7 @@ where
 {
     let mut conn = conn.acquire().await?;
     let mut query_str = r#"
-            SELECT f.id, f.name, g.name as group_name, f.group_id, f.value_type, f.description, f.create_time, f.modify_time
+            SELECT f.id, f.name, g.name as group_name, g.category as category, f.group_id, f.value_type, f.description, f.create_time, f.modify_time
             FROM feature as f left join feature_group as g on f.group_id = g.id "#.to_owned();
 
     let query = match opt {
@@ -608,7 +608,7 @@ mod tests {
     use sqlx::SqlitePool;
 
     async fn prepare_db(pool: SqlitePool) -> DB {
-        let db = DB::from_pool(pool);
+        let db = DB { pool };
         db.create_schemas().await;
         db
     }

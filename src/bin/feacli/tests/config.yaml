@@ -1,0 +1,3 @@
+metadata:
+  sqlite:
+    db_file: "/tmp/feastore.db"

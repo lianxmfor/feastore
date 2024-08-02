@@ -1,28 +1,35 @@
 use chrono::{DateTime, Utc};
+use clap::builder::PossibleValue;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+
+use super::GroupCategory;
 
 #[derive(sqlx::FromRow, Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Feature {
     pub id: i64,
     pub name: String,
+    #[serde(rename(serialize = "group", deserialize = "group"))]
+    pub group_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<GroupCategory>,
     #[serde(rename(serialize = "value-type", deserialize = "value-type"))]
     pub value_type: FeatureValueType,
-
     pub description: String,
     pub create_time: DateTime<Utc>,
     pub modify_time: DateTime<Utc>,
 
+    #[serde(skip)]
     pub group_id: i64,
-    #[serde(rename(serialize = "group-name", deserialize = "group-name"))]
-    pub group_name: String,
 }
 
 #[derive(sqlx::FromRow, Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename = "Feature")]
 pub struct ApplyFeature {
+    // just for printing, the value is always None or Some("Group")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     pub name: String,
-    #[serde(rename(serialize = "group-name", deserialize = "group-name"))]
+    #[serde(rename(serialize = "group", deserialize = "group"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group_name: Option<String>,
     #[serde(rename(serialize = "value-type", deserialize = "value-type"))]
@@ -39,12 +46,17 @@ pub struct CreateFeatureOpt {
 }
 
 impl ApplyFeature {
-    pub fn from(f: Feature, need_group_name: bool) -> Self {
+    pub fn from(f: Feature, full_information: bool) -> Self {
         Self {
+            kind: if full_information {
+                Some("Feature".to_string())
+            } else {
+                None
+            },
             name: f.name,
             value_type: f.value_type,
             description: f.description,
-            group_name: if need_group_name {
+            group_name: if full_information {
                 Some(f.group_name)
             } else {
                 None
@@ -64,7 +76,7 @@ impl From<Feature> for CreateFeatureOpt {
     }
 }
 
-#[derive(Serialize, Deserialize, sqlx::Type, Default, PartialEq, Debug, Clone, ValueEnum)]
+#[derive(Serialize, Deserialize, sqlx::Type, Default, PartialEq, Debug, Clone)]
 #[serde(rename_all(serialize = "lowercase", deserialize = "lowercase"))]
 pub enum FeatureValueType {
     #[default]
@@ -78,39 +90,27 @@ pub enum FeatureValueType {
     Invalid,
 }
 
-impl From<&str> for FeatureValueType {
-    fn from(s: &str) -> Self {
-        match s {
-            "string" => FeatureValueType::StringType,
-            "int64" => FeatureValueType::Int64,
-            "float64" => FeatureValueType::Float64,
-            "bool" => FeatureValueType::Bool,
-            "time" => FeatureValueType::Time,
-            "bytes" => FeatureValueType::Bytes,
-            _ => FeatureValueType::Invalid,
-        }
+impl ValueEnum for FeatureValueType {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            Self::StringType,
+            Self::Int64,
+            Self::Float64,
+            Self::Bool,
+            Self::Time,
+            Self::Bytes,
+        ]
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::FeatureValueType;
-    #[test]
-    fn convert_to_feature_value_type_work() {
-        let test_cases = vec![
-            // TODO: use fake crate to generate string
-            ("string", FeatureValueType::StringType),
-            ("int64", FeatureValueType::Int64),
-            ("float64", FeatureValueType::Float64),
-            ("bool", FeatureValueType::Bool),
-            ("time", FeatureValueType::Time),
-            ("bytes", FeatureValueType::Bytes),
-            ("", FeatureValueType::Invalid),
-        ];
-
-        for (literal, value) in test_cases {
-            let get_value: FeatureValueType = literal.into();
-            assert_eq!(get_value, value);
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        match self {
+            Self::StringType => Some(PossibleValue::new("string")),
+            Self::Int64 => Some(PossibleValue::new("int64")),
+            Self::Float64 => Some(PossibleValue::new("float64")),
+            Self::Bool => Some(PossibleValue::new("bool")),
+            Self::Time => Some(PossibleValue::new("time")),
+            Self::Bytes => Some(PossibleValue::new("bytes")),
+            Self::Invalid => None,
         }
     }
 }

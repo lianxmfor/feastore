@@ -35,7 +35,7 @@ struct RegisterGroup {
     #[arg(short, long)]
     category: GroupCategory,
     #[arg(short, long)]
-    snapshot_interval: Option<u64>,
+    snapshot_interval: Option<i32>,
     #[arg(short, long)]
     description: String,
 }
@@ -79,7 +79,7 @@ async fn register_group(group: RegisterGroup, store: Store) -> Result<()> {
         entity_id,
         name: group.name,
         category: group.category,
-        snapshot_interval: group.snapshot_interval.map(|i| i as i32),
+        snapshot_interval: group.snapshot_interval,
         description: group.description,
     };
 

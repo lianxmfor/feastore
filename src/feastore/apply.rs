@@ -7,7 +7,7 @@ use std::io;
 use crate::database::metadata::{ApplyEntity, ApplyFeature, ApplyGroup};
 use crate::feastore::error::Result;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) struct ApplyStage {
     pub new_entities: Vec<ApplyEntity>,
     pub new_groups: Vec<ApplyGroup>,
@@ -27,7 +27,7 @@ impl ApplyStage {
         let mut stage = ApplyStage::new();
 
         for de in yaml::Deserializer::from_reader(r) {
-            let v = yaml::Value::deserialize(de).expect("Unable to parse. fuck");
+            let v = yaml::Value::deserialize(de).expect("Unable to parse.");
             let sub_stage = Self::from_value(v)?;
             stage.merge(sub_stage);
         }
@@ -145,7 +145,6 @@ mod tests {
     use super::*;
     use crate::database::metadata::GroupCategory::{Batch, Stream};
     use crate::database::metadata::{ApplyEntity, ApplyGroup, FeatureValueType};
-    use std::time::Duration;
 
     #[test]
     fn test_build_apply_stage() {
@@ -204,33 +203,33 @@ description: 'description'
 ---
 kind: Group
 name: account
-entity-name: user
+entity: user
 category: batch
 description: 'description'
 ---
 kind: Group
 name: device
-entity-name: user
+entity: user
 category: batch
 description: 'description'
 ---
 kind: Group
 name: user-click
-entity-name: user
+entity: user
 category: stream
-snapshot-interval: 86400
+snapshot-interval: 7200
 description: 'description'
 ---
 kind: Feature
 name: model
-group-name: device
+group: device
 category: batch
 value-type: string
 description: 'description'
 ---
 kind: Feature
 name: price
-group-name: device
+group: device
 category: batch
 value-type: int64
 description: 'description'"#
@@ -243,14 +242,16 @@ description: 'description'"#
                     }],
                     new_groups: vec![
                         ApplyGroup {
+                            kind: Some(s("Group")),
                             name: s("account"),
                             entity_name: Some(s("user")),
                             category: Batch,
-                            snapshot_interval: None,
                             description: s("description"),
+                            snapshot_interval: None,
                             features: None,
                         },
                         ApplyGroup {
+                            kind: Some(s("Group")),
                             name: s("device"),
                             entity_name: Some(s("user")),
                             category: Batch,
@@ -259,22 +260,25 @@ description: 'description'"#
                             features: None,
                         },
                         ApplyGroup {
+                            kind: Some(s("Group")),
                             name: s("user-click"),
                             entity_name: Some(s("user")),
                             category: Stream,
-                            snapshot_interval: Some(Duration::from_secs(86400)),
+                            snapshot_interval: Some(7200),
                             description: s("description"),
                             features: None,
                         },
                     ],
                     new_features: vec![
                         ApplyFeature {
+                            kind: Some(s("Feature")),
                             name: s("model"),
                             group_name: Some(s("device")),
                             value_type: FeatureValueType::StringType,
                             description: s("description"),
                         },
                         ApplyFeature {
+                            kind: Some(s("Feature")),
                             name: s("price"),
                             group_name: Some(s("device")),
                             value_type: FeatureValueType::Int64,
@@ -288,7 +292,7 @@ description: 'description'"#
                 r: r#"
 kind: Group
 name: device
-entity-name: user
+entity: user
 category: batch
 description: 'description'
 features:
@@ -303,6 +307,7 @@ features:
                 want: Ok(ApplyStage {
                     new_entities: vec![],
                     new_groups: vec![ApplyGroup {
+                        kind: Some(s("Group")),
                         entity_name: Some(s("user")),
                         name: s("device"),
                         category: Batch,
@@ -312,12 +317,14 @@ features:
                     }],
                     new_features: vec![
                         ApplyFeature {
+                            kind: None,
                             name: s("model"),
                             group_name: Some(s("device")),
                             value_type: FeatureValueType::StringType,
                             description: s("description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("price"),
                             group_name: Some(s("device")),
                             value_type: FeatureValueType::Int64,
@@ -355,7 +362,7 @@ groups:
     description: 'description'
 - name: user-click
   category: stream
-  snapshot-interval: 86400
+  snapshot-interval: 7200
   description: description
   features:
   - name: last_5_click_posts
@@ -374,6 +381,7 @@ groups:
                     }],
                     new_groups: vec![
                         ApplyGroup {
+                            kind: None,
                             name: s("device"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -382,6 +390,7 @@ groups:
                             features: None,
                         },
                         ApplyGroup {
+                            kind: None,
                             name: s("user"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -390,46 +399,53 @@ groups:
                             features: None,
                         },
                         ApplyGroup {
+                            kind: None,
                             name: s("user-click"),
                             category: Stream,
                             entity_name: Some(s("user")),
                             description: s("description"),
-                            snapshot_interval: Some(Duration::from_secs(86400)),
+                            snapshot_interval: Some(7200),
                             features: None,
                         },
                     ],
                     new_features: vec![
                         ApplyFeature {
+                            kind: None,
                             name: s("model"),
                             group_name: Some(s("device")),
                             value_type: FeatureValueType::StringType,
                             description: s("description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("price"),
                             group_name: Some(s("device")),
                             value_type: FeatureValueType::Int64,
                             description: s("description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("age"),
                             group_name: Some(s("user")),
                             value_type: FeatureValueType::Int64,
                             description: s("description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("gender"),
                             group_name: Some(s("user")),
                             value_type: FeatureValueType::Int64,
                             description: s("description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("last_5_click_posts"),
                             group_name: Some(s("user-click")),
                             value_type: FeatureValueType::StringType,
                             description: s("description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("number_of_user_started_posts"),
                             group_name: Some(s("user-click")),
                             value_type: FeatureValueType::Int64,
@@ -444,27 +460,27 @@ groups:
 items:
     - kind: Feature
       name: credit_score
-      group-name: account
+      group: account
       value-type: int64
       description: "credit_score description"
     - kind: Feature
       name: account_age_days
-      group-name: account
+      group: account
       value-type: int64
       description: "account_age_days description"
     - kind: Feature
       name: has_2fa_installed
-      group-name: account
+      group: account
       value-type: bool
       description: "has_2fa_installed description"
     - kind: Feature
       name: transaction_count_7d
-      group-name: transaction_stats
+      group: transaction_stats
       value-type: int64
       description: "transaction_count_7d description"
     - kind: Feature
       name: transaction_count_30d
-      group-name: transaction_stats
+      group: transaction_stats
       value-type: int64
       description: "transaction_count_30d description"
             "#
@@ -474,30 +490,35 @@ items:
                     new_groups: vec![],
                     new_features: vec![
                         ApplyFeature {
+                            kind: Some(s("Feature")),
                             name: s("credit_score"),
                             group_name: Some(s("account")),
                             value_type: FeatureValueType::Int64,
                             description: s("credit_score description"),
                         },
                         ApplyFeature {
+                            kind: Some(s("Feature")),
                             name: s("account_age_days"),
                             group_name: Some(s("account")),
                             value_type: FeatureValueType::Int64,
                             description: s("account_age_days description"),
                         },
                         ApplyFeature {
+                            kind: Some(s("Feature")),
                             name: s("has_2fa_installed"),
                             group_name: Some(s("account")),
                             value_type: FeatureValueType::Bool,
                             description: s("has_2fa_installed description"),
                         },
                         ApplyFeature {
+                            kind: Some(s("Feature")),
                             name: s("transaction_count_7d"),
                             group_name: Some(s("transaction_stats")),
                             value_type: FeatureValueType::Int64,
                             description: s("transaction_count_7d description"),
                         },
                         ApplyFeature {
+                            kind: Some(s("Feature")),
                             name: s("transaction_count_30d"),
                             group_name: Some(s("transaction_stats")),
                             value_type: FeatureValueType::Int64,
@@ -512,7 +533,7 @@ items:
 items:
     - kind: Group
       name: account
-      entity-name: user
+      entity: user
       category: batch
       description: user account info
       features:
@@ -527,7 +548,7 @@ items:
           description: has_2fa_installed description
     - kind: Group
       name: transaction_stats
-      entity-name: user
+      entity: user
       category: batch
       description: user transaction statistics
       features:
@@ -543,6 +564,7 @@ items:
                     new_entities: vec![],
                     new_groups: vec![
                         ApplyGroup {
+                            kind: Some(s("Group")),
                             name: s("account"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -551,6 +573,7 @@ items:
                             features: None,
                         },
                         ApplyGroup {
+                            kind: Some(s("Group")),
                             name: s("transaction_stats"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -561,30 +584,35 @@ items:
                     ],
                     new_features: vec![
                         ApplyFeature {
+                            kind: None,
                             name: s("credit_score"),
                             group_name: Some(s("account")),
                             value_type: FeatureValueType::Int64,
                             description: s("credit_score description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("account_age_days"),
                             group_name: Some(s("account")),
                             value_type: FeatureValueType::Int64,
                             description: s("account_age_days description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("has_2fa_installed"),
                             group_name: Some(s("account")),
                             value_type: FeatureValueType::Bool,
                             description: s("has_2fa_installed description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("transaction_count_7d"),
                             group_name: Some(s("transaction_stats")),
                             value_type: FeatureValueType::Int64,
                             description: s("transaction_count_7d description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("transaction_count_30d"),
                             group_name: Some(s("transaction_stats")),
                             value_type: FeatureValueType::Int64,
@@ -655,6 +683,7 @@ items:
                     ],
                     new_groups: vec![
                         ApplyGroup {
+                            kind: None,
                             name: s("account"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -663,6 +692,7 @@ items:
                             features: None,
                         },
                         ApplyGroup {
+                            kind: None,
                             name: s("transaction_stats"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -671,6 +701,7 @@ items:
                             features: None,
                         },
                         ApplyGroup {
+                            kind: None,
                             name: s("phone"),
                             category: Batch,
                             entity_name: Some(s("device")),
@@ -681,42 +712,49 @@ items:
                     ],
                     new_features: vec![
                         ApplyFeature {
+                            kind: None,
                             name: s("credit_score"),
                             group_name: Some(s("account")),
                             value_type: FeatureValueType::Int64,
                             description: s("credit_score description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("account_age_days"),
                             group_name: Some(s("account")),
                             value_type: FeatureValueType::Int64,
                             description: s("account_age_days description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("has_2fa_installed"),
                             group_name: Some(s("account")),
                             value_type: FeatureValueType::Bool,
                             description: s("has_2fa_installed description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("transaction_count_7d"),
                             group_name: Some(s("transaction_stats")),
                             value_type: FeatureValueType::Int64,
                             description: s("transaction_count_7d description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("transaction_count_30d"),
                             group_name: Some(s("transaction_stats")),
                             value_type: FeatureValueType::Int64,
                             description: s("transaction_count_30d description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("model"),
                             group_name: Some(s("phone")),
                             value_type: FeatureValueType::StringType,
                             description: s("model description"),
                         },
                         ApplyFeature {
+                            kind: None,
                             name: s("price"),
                             group_name: Some(s("phone")),
                             value_type: FeatureValueType::Int64,
@@ -763,7 +801,7 @@ items:
 items:
     - kind: Feature
       name: credit_score
-      group-name: account
+      group: account
       value-type: int64
       description: "credit_score description"
 "#;
@@ -778,12 +816,12 @@ items:
 items:
     - kind: Feature
       name: credit_score
-      group-name: account
+      group: account
       value-type: int64
       description: "credit_score description"
     - kind: Feature
       name: account_age_days
-      group-name: account
+      group: account
       value-type: int64
       description: "account_age_days description"
 "#;
@@ -795,7 +833,7 @@ items:
 items:
     - kind: Group
       name: account
-      entity-name: user
+      entity: user
       category: batch
       description: user account info
       features:

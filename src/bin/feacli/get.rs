@@ -9,17 +9,13 @@ use feastore::{Result, Store};
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
 pub struct Command {
-    /// show detailed information
-    #[arg(short, long, global(true))]
-    wide: bool,
-
     /// names
     #[arg(short, long, global(true))]
     names: Vec<String>,
 
     /// output format
     #[arg(value_enum, default_value_t=Format::AsciiTable, short, long, global(true))]
-    output: Format,
+    output_format: Format,
 
     #[command(subcommand)]
     cmds: SubCmd,
@@ -53,32 +49,30 @@ impl Command {
 
     async fn get_entity(&self, store: Store) -> Result<()> {
         let opt = build_opt(&self.names);
-        match self.output {
-            Format::Yaml => {
-                let entities = store
-                    .list_entity_with_full_information(opt)
-                    .await?
-                    .into_iter()
-                    .map(|e| ApplyEntity::from(e))
-                    .collect();
+        if let Format::Yaml = self.output_format {
+            let entities = store
+                .list_entity_with_full_information(opt)
+                .await?
+                .into_iter()
+                .map(|e| ApplyEntity::from(e))
+                .collect();
 
-                output(entities, &self.output);
-            }
-            _ => {
-                let entities = store
-                    .list_entity(opt)
-                    .await
-                    .expect("failed to get entities");
+            output(entities, &self.output_format);
+        } else {
+            let entities = store
+                .list_entity(opt)
+                .await
+                .expect("failed to get entities");
 
-                output(entities, &self.output);
-            }
+            output(entities, &self.output_format);
         }
+
         Ok(())
     }
 
     async fn get_group(&self, store: Store) -> Result<()> {
         let opt = build_opt(&self.names);
-        match self.output {
+        match self.output_format {
             Format::Yaml => {
                 let groups = store
                     .list_group_with_full_information(opt)
@@ -87,12 +81,12 @@ impl Command {
                     .map(|g| ApplyGroup::from(g, true))
                     .collect();
 
-                output(groups, &self.output);
+                output(groups, &self.output_format);
             }
             _ => {
                 let groups = store.list_group(opt).await?;
 
-                output(groups, &self.output);
+                output(groups, &self.output_format);
             }
         }
         Ok(())
@@ -100,7 +94,7 @@ impl Command {
 
     async fn get_feature(&self, store: Store) -> Result<()> {
         let opt = build_opt(&self.names);
-        match self.output {
+        match self.output_format {
             Format::Yaml => {
                 let features = store
                     .list_feature(opt)
@@ -109,15 +103,15 @@ impl Command {
                     .map(|f| ApplyFeature::from(f, true))
                     .collect();
 
-                output(features, &self.output);
+                output(features, &self.output_format);
             }
             _ => {
-                let entities = store
+                let features = store
                     .list_feature(opt)
                     .await
-                    .expect("failed to get entities");
+                    .expect("failed to get features");
 
-                output(entities, &self.output);
+                output(features, &self.output_format);
             }
         }
         Ok(())
