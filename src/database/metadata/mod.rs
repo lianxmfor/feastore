@@ -4,18 +4,20 @@ mod types;
 
 pub use db::DataStore;
 
-pub use types::ApplyEntity;
 pub use types::Entity;
+pub use types::RichEntity;
 
-pub use types::ApplyGroup;
+pub use types::Category;
 pub use types::CreateGroupOpt;
 pub use types::Group;
-pub use types::GroupCategory;
+pub use types::RichGroup;
 
-pub use types::ApplyFeature;
 pub use types::CreateFeatureOpt;
 pub use types::Feature;
-pub use types::FeatureValueType;
+pub use types::RichFeature;
+pub use types::ValueType;
 
 pub use types::GetOpt;
+pub use types::ListFeatureOpt;
+pub use types::ListGroupOpt;
 pub use types::ListOpt;

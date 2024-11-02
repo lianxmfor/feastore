@@ -1,7 +1,5 @@
 use clap::{Args, Subcommand};
-use feastore::database::metadata::{
-    CreateFeatureOpt, CreateGroupOpt, FeatureValueType, GetOpt, GroupCategory,
-};
+use feastore::database::metadata::{Category, CreateFeatureOpt, CreateGroupOpt, GetOpt, ValueType};
 use feastore::{Result, Store};
 
 #[derive(Args)]
@@ -33,7 +31,7 @@ struct RegisterGroup {
     #[arg(short, long)]
     entity: String,
     #[arg(short, long)]
-    category: GroupCategory,
+    category: Category,
     #[arg(short, long)]
     snapshot_interval: Option<i32>,
     #[arg(short, long)]
@@ -46,7 +44,7 @@ struct RegisterFeature {
     #[arg(short, long)]
     group: String,
     #[arg(short, long)]
-    value_type: FeatureValueType,
+    value_type: ValueType,
     #[arg(short, long)]
     description: String,
 }

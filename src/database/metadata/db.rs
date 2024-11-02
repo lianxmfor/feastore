@@ -1,9 +1,11 @@
 use crate::database::metadata::{
-    sqlite, CreateFeatureOpt, CreateGroupOpt, Entity, Feature, GetOpt, Group, ListOpt,
+    sqlite, CreateFeatureOpt, CreateGroupOpt, Entity, GetOpt, Group, ListOpt, RichEntity, RichGroup,
 };
 use crate::database::Result;
 use crate::feastore::apply;
 use crate::feastore::BackendOpt;
+
+use super::types::{Feature, ListFeatureOpt};
 
 pub enum DataStore {
     Sqlite(sqlite::DB),
@@ -51,6 +53,12 @@ impl DataStore {
         }
     }
 
+    pub(crate) async fn list_rich_entity<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<RichEntity>> {
+        match self {
+            Self::Sqlite(db) => db.list_rich_entity(opt).await,
+        }
+    }
+
     pub(crate) async fn create_group(&self, group: CreateGroupOpt) -> Result<i64> {
         match self {
             Self::Sqlite(db) => db.create_group(group).await,
@@ -93,33 +101,21 @@ impl DataStore {
         }
     }
 
-    pub(crate) async fn list_feature<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Feature>> {
-        match self {
-            Self::Sqlite(db) => db.list_feature(opt).await,
-        }
-    }
-
     pub(crate) async fn apply(&self, stage: apply::ApplyStage) -> Result<()> {
         match self {
             Self::Sqlite(db) => db.apply(stage).await,
         }
     }
 
-    pub(crate) async fn list_entities_with_full_information<'a>(
-        &self,
-        opt: ListOpt<'a>,
-    ) -> Result<Vec<Entity>> {
+    pub(crate) async fn list_rich_group<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<RichGroup>> {
         match self {
-            Self::Sqlite(db) => db.list_entity_with_full_information(opt).await,
+            Self::Sqlite(db) => db.list_rich_group(opt).await,
         }
     }
 
-    pub(crate) async fn list_group_with_full_information<'a>(
-        &self,
-        opt: ListOpt<'a>,
-    ) -> Result<Vec<Group>> {
+    pub(crate) async fn list_feature2(&self, opt: ListFeatureOpt) -> Result<Vec<Feature>> {
         match self {
-            Self::Sqlite(db) => db.list_groups_with_full_information(opt).await,
+            Self::Sqlite(db) => db.list_feature2(opt).await,
         }
     }
 }

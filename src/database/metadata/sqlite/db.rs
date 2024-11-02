@@ -1,9 +1,10 @@
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 
 use crate::database::metadata::sqlite::schema;
+use crate::database::metadata::types::{Feature, Group2, ListFeatureOpt, ListGroupOpt};
 use crate::database::metadata::{
-    ApplyEntity, ApplyFeature, ApplyGroup, CreateFeatureOpt, CreateGroupOpt, Entity, Feature,
-    GetOpt, Group, ListOpt,
+    CreateFeatureOpt, CreateGroupOpt, Entity, GetOpt, Group, ListOpt, RichEntity, RichFeature,
+    RichGroup,
 };
 use crate::database::{Error, Result, SQLiteOpt};
 use crate::feastore::apply::ApplyStage;
@@ -52,11 +53,9 @@ impl DB {
         }
 
         for mut g in stage.new_groups.drain(..) {
-            let entity_name = match g.entity_name.take() {
-                Some(name) => name,
-                None => continue,
-            };
-            self.apply_group(tx, &entity_name, g).await?;
+            if let Some(name) = g.entity_name.take() {
+                self.apply_group(tx, &name, g).await?;
+            }
         }
 
         for f in stage.new_features.drain(..) {
@@ -66,44 +65,39 @@ impl DB {
         Ok(())
     }
 
-    pub(crate) async fn list_entity_with_full_information<'a>(
-        &self,
-        opt: ListOpt<'a>,
-    ) -> Result<Vec<Entity>> {
+    pub(crate) async fn list_rich_entity<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<RichEntity>> {
         let entities = list_entity(&self.pool, opt).await?;
-        let groups = self.list_groups_with_full_information(ListOpt::All).await?;
+        let groups = self.list_rich_group(ListOpt::All).await?;
 
         let mut res = vec![];
-        for mut entity in entities {
+        for entity in entities {
+            let entity_name = Some(entity.name.to_owned());
             let the_groups = groups
                 .iter()
-                .filter(|group| group.entity_name == entity.name)
-                .map(|group| group.clone())
-                .collect::<Vec<Group>>();
-            entity.groups = Some(the_groups);
+                .filter(|g| g.entity_name == entity_name)
+                .map(|g| g.clone())
+                .collect::<Vec<RichGroup>>();
 
-            res.push(entity);
+            res.push(RichEntity::from(entity, Some(the_groups)));
         }
         Ok(res)
     }
 
-    pub(crate) async fn list_groups_with_full_information<'a>(
-        &self,
-        opt: ListOpt<'a>,
-    ) -> Result<Vec<Group>> {
+    pub(crate) async fn list_rich_group<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<RichGroup>> {
         let groups = self.list_group(opt).await?;
-        let features = self.list_feature(ListOpt::All).await?; // FIXME: use sql to filter features other than code
+        let features = self
+            .list_feature2(ListFeatureOpt::EntityIDs(vec![1])) // FIXME
+            .await?;
 
         let mut res = vec![];
-        for mut group in groups {
-            let the_features = features
+        for group in groups {
+            let the_features: Vec<_> = features
                 .iter()
                 .filter(|feature| feature.group_id == group.id)
-                .map(|feature| feature.clone())
-                .collect::<Vec<Feature>>();
-            group.features = Some(the_features);
+                .map(|f| RichFeature::from2(f.to_owned()))
+                .collect();
 
-            res.push(group);
+            res.push(RichGroup::from(group, Some(the_features)));
         }
 
         Ok(res)
@@ -112,7 +106,7 @@ impl DB {
     async fn apply_entity(
         &self,
         tx: &mut Transaction<'_, Sqlite>,
-        entity: ApplyEntity,
+        entity: RichEntity,
     ) -> Result<()> {
         let old_entity = get_entity(&mut *tx, GetOpt::Name(&entity.name)).await?;
 
@@ -132,7 +126,7 @@ impl DB {
         &self,
         tx: &mut Transaction<'_, Sqlite>,
         entity_name: &str,
-        group: ApplyGroup,
+        group: RichGroup,
     ) -> Result<()> {
         let old_group = get_group(&mut *tx, GetOpt::Name(&group.name)).await?;
 
@@ -163,7 +157,7 @@ impl DB {
     async fn apply_feature(
         &self,
         tx: &mut Transaction<'_, Sqlite>,
-        feature: ApplyFeature,
+        feature: RichFeature,
     ) -> Result<()> {
         let old_feature = get_feature(&mut *tx, GetOpt::Name(&feature.name)).await?;
 
@@ -190,6 +184,31 @@ impl DB {
         }
 
         Ok(())
+    }
+
+    pub(crate) async fn list_group2(&self, opt: ListGroupOpt) -> Result<Vec<Group2>> {
+        let mut groups = list_group2(&self.pool, opt).await?;
+        let entity_ids = groups.iter().map(|g| g.entity_id).collect::<Vec<i64>>();
+        let entities = list_entity(&self.pool, ListOpt::IDs(entity_ids)).await?;
+
+        for group in groups.iter_mut() {
+            let entity = entities.iter().find(|e| group.entity_id == e.id);
+            group.entity = entity.cloned();
+        }
+
+        Ok(groups)
+    }
+
+    pub(crate) async fn list_feature2(&self, opt: ListFeatureOpt) -> Result<Vec<Feature>> {
+        let mut features = list_feature2(&self.pool, opt).await?;
+        let ids = features.iter().map(|f| f.group_id).collect();
+        let groups = self.list_group2(ListGroupOpt::GroupIDs(ids)).await?;
+
+        features.iter_mut().for_each(|f| {
+            f.group = groups.iter().find(|g| f.group_id == g.id).cloned();
+        });
+
+        Ok(features)
     }
 
     pub(crate) async fn create_entity(&self, name: &str, description: &str) -> Result<i64> {
@@ -231,10 +250,6 @@ impl DB {
 
     pub(crate) async fn get_feature<'a>(&self, opt: GetOpt<'a>) -> Result<Option<Feature>> {
         get_feature(&self.pool, opt).await
-    }
-
-    pub(crate) async fn list_feature<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Feature>> {
-        list_feature(&self.pool, opt).await
     }
 }
 
@@ -474,6 +489,38 @@ where
     res.map_err(|e| e.into())
 }
 
+async fn list_group2<'a, A>(conn: A, opt: ListGroupOpt) -> Result<Vec<Group2>>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    let mut conn = conn.acquire().await?;
+    let query = "SELECT id, name, category, entity_id, snapshot_interval, description, create_time, modify_time FROM feature_group".to_string();
+
+    let (cond, ids) = build_list_group_cond(&opt);
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let query = format!("{query} WHERE {cond} in (?{})", ", ?".repeat(ids.len() - 1));
+    let mut query = sqlx::query(&query);
+    for id in ids {
+        query = query.bind(id);
+    }
+    query
+        .fetch_all(&mut *conn)
+        .await?
+        .iter()
+        .map(Group2::from_row)
+        .collect::<std::result::Result<Vec<Group2>, sqlx::Error>>()
+        .map_err(|e| e.into())
+}
+
+fn build_list_group_cond(opt: &ListGroupOpt) -> (&'static str, &Vec<i64>) {
+    match opt {
+        ListGroupOpt::EntityIDs(ids) => ("entity_id", ids),
+        ListGroupOpt::GroupIDs(ids) => ("id", ids),
+    }
+}
+
 async fn create_feature<'a, A>(conn: A, opt: CreateFeatureOpt) -> Result<i64>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
@@ -527,76 +574,67 @@ where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
     let mut conn = conn.acquire().await?;
-    let mut query_str = r#"
-            SELECT f.id, f.name, g.name as group_name, g.category as category, f.group_id, f.value_type, f.description, f.create_time, f.modify_time
-            FROM feature as f left join feature_group as g on f.group_id = g.id "#.to_owned();
+    let mut query =
+        "SELECT id, name, group_id, value_type, description, create_time, modify_time FROM feature"
+            .to_string();
 
     let query = match opt {
         GetOpt::ID(id) => {
-            query_str = format!("{query_str} WHERE f.id = ?");
-            sqlx::query_as(&query_str).bind(id)
+            query = format!("{query} WHERE id = ?");
+            sqlx::query_as(&query).bind(id)
         }
         GetOpt::Name(name) => {
-            query_str = format!("{query_str} WHERE f.name = ?");
-            sqlx::query_as(&query_str).bind(name)
+            query = format!("{query} WHERE name = ?");
+            sqlx::query_as(&query).bind(name)
         }
     };
 
     Ok(query.fetch_optional(&mut *conn).await?)
 }
 
-async fn list_feature<'a, A>(conn: A, opt: ListOpt<'a>) -> Result<Vec<Feature>>
+async fn list_feature2<'a, A>(conn: A, opt: ListFeatureOpt) -> Result<Vec<Feature>>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
     let mut conn = conn.acquire().await?;
-    let mut query_str = r#"
-            SELECT f.id, f.name, g.name as group_name, g.category as category, f.group_id, f.value_type, f.description, f.create_time, f.modify_time
-            FROM feature as f left join feature_group as g on f.group_id = g.id "#.to_owned();
+    let mut query =
+        "SELECT id, name, group_id, value_type, description, create_time, modify_time FROM feature"
+            .to_string();
 
-    let query = match opt {
-        ListOpt::All => sqlx::query(&query_str),
-        ListOpt::IDs(ids) => {
-            if ids.is_empty() {
-                return Ok(Vec::new());
-            }
-
-            query_str = format!(
-                "{query_str} WHERE f.id in (?{})",
-                ", ?".repeat(ids.len() - 1)
-            );
-
-            let mut query = sqlx::query(&query_str);
-            for id in ids {
-                query = query.bind(id);
-            }
-            query
+    let query = if let Some((cond, ids)) = build_list_feature_cond(&opt) {
+        if ids.is_empty() {
+            return Ok(Vec::new());
         }
-        ListOpt::Names(names) => {
-            if names.is_empty() {
-                return Ok(Vec::new());
-            }
 
-            query_str = format!(
-                "{query_str} WHERE f.name in (?{})",
-                ", ?".repeat(names.len() - 1)
-            );
-            let mut query = sqlx::query(&query_str);
-            for name in names {
-                query = query.bind(name);
-            }
-            query
+        query = format!(
+            "{query} WHERE {} in (?{})",
+            cond,
+            ", ?".repeat(ids.len() - 1)
+        );
+        let mut query = sqlx::query(&query);
+        for id in ids {
+            query = query.bind(id);
         }
+        query
+    } else {
+        sqlx::query(&query)
     };
 
-    let res = query
+    query
         .fetch_all(&mut *conn)
         .await?
         .iter()
         .map(Feature::from_row)
-        .collect::<std::result::Result<Vec<Feature>, sqlx::Error>>();
+        .collect::<std::result::Result<Vec<Feature>, sqlx::Error>>()
+        .map_err(|e| e.into())
+}
 
-    res.map_err(|e| e.into())
+fn build_list_feature_cond(opt: &ListFeatureOpt) -> Option<(&'static str, &Vec<i64>)> {
+    match opt {
+        ListFeatureOpt::GroupIDs(ids) => Some(("group_id", ids)),
+        ListFeatureOpt::FeatureIDs(ids) => Some(("id", ids)),
+        ListFeatureOpt::EntityIDs(_) => None,
+    }
 }
 
 #[cfg(test)]
@@ -604,7 +642,7 @@ mod tests {
     use super::*;
 
     use crate::database::error::Error;
-    use crate::database::metadata::types::{FeatureValueType, GroupCategory};
+    use crate::database::metadata::types::{Category, ValueType};
     use sqlx::SqlitePool;
 
     async fn prepare_db(pool: SqlitePool) -> DB {
@@ -758,7 +796,7 @@ mod tests {
             &db.pool,
             CreateGroupOpt {
                 name: "name".to_owned(),
-                category: GroupCategory::Batch,
+                category: Category::Batch,
                 snapshot_interval: None,
                 description: "description".to_owned(),
                 entity_id,
@@ -771,7 +809,7 @@ mod tests {
             &db.pool,
             CreateGroupOpt {
                 name: "name1".to_owned(),
-                category: GroupCategory::Stream,
+                category: Category::Stream,
                 snapshot_interval: None,
                 description: "description".to_owned(),
                 entity_id,
@@ -784,7 +822,7 @@ mod tests {
             &db.pool,
             CreateGroupOpt {
                 name: "name".to_owned(),
-                category: GroupCategory::Batch,
+                category: Category::Batch,
                 snapshot_interval: None,
                 description: "description".to_owned(),
                 entity_id,
@@ -808,7 +846,7 @@ mod tests {
         let group_zero = Group {
             id: 1,
             name: "name".to_owned(),
-            category: GroupCategory::Batch,
+            category: Category::Batch,
             snapshot_interval: Some(123),
             description: "description".to_owned(),
             entity_id,
@@ -864,7 +902,7 @@ mod tests {
         let origin_group = Group {
             id: 1,
             name: "name".to_owned(),
-            category: GroupCategory::Batch,
+            category: Category::Batch,
             snapshot_interval: Some(123456),
             description: "description".to_owned(),
             entity_id,
@@ -909,7 +947,7 @@ mod tests {
             CreateGroupOpt {
                 entity_id,
                 name: "name1".to_owned(),
-                category: GroupCategory::Batch,
+                category: Category::Batch,
                 snapshot_interval: None,
                 description: "description".to_owned()
             }
@@ -924,7 +962,7 @@ mod tests {
             CreateGroupOpt {
                 entity_id,
                 name: "name2".to_owned(),
-                category: GroupCategory::Batch,
+                category: Category::Batch,
                 snapshot_interval: None,
                 description: "description".to_owned()
             }
@@ -956,7 +994,7 @@ mod tests {
             &db.pool,
             CreateGroupOpt {
                 entity_id,
-                category: GroupCategory::Batch,
+                category: Category::Batch,
                 snapshot_interval: None,
                 name: "group_name".to_owned(),
                 description: "description".to_owned(),
@@ -971,7 +1009,7 @@ mod tests {
                 group_id,
                 feature_name: "feature_name".to_owned(),
                 description: "description".to_owned(),
-                value_type: FeatureValueType::Float64,
+                value_type: ValueType::Float64,
             },
         )
         .await;
@@ -983,7 +1021,7 @@ mod tests {
                 group_id,
                 feature_name: "feature_name2".to_owned(),
                 description: "description".to_owned(),
-                value_type: FeatureValueType::Float64,
+                value_type: ValueType::Float64,
             },
         )
         .await;
@@ -995,7 +1033,7 @@ mod tests {
                 group_id,
                 feature_name: "feature_name".to_owned(),
                 description: "description".to_owned(),
-                value_type: FeatureValueType::Float64,
+                value_type: ValueType::Float64,
             },
         )
         .await;
@@ -1009,7 +1047,7 @@ mod tests {
             &db.pool,
             CreateGroupOpt {
                 entity_id,
-                category: GroupCategory::Batch,
+                category: Category::Batch,
                 snapshot_interval: None,
                 name: "new_group_name".to_owned(),
                 description: "description".to_owned(),
@@ -1024,7 +1062,7 @@ mod tests {
                 group_id: new_group_id,
                 feature_name: "feature_name".to_owned(),
                 description: "description".to_owned(),
-                value_type: FeatureValueType::Float64,
+                value_type: ValueType::Float64,
             },
         )
         .await;
@@ -1041,7 +1079,7 @@ mod tests {
             &db.pool,
             CreateGroupOpt {
                 entity_id,
-                category: GroupCategory::Batch,
+                category: Category::Batch,
                 snapshot_interval: None,
                 name: "new_group_name".to_owned(),
                 description: "description".to_owned(),
@@ -1056,7 +1094,7 @@ mod tests {
                 group_id,
                 feature_name: "feature".to_owned(),
                 description: "description".to_owned(),
-                value_type: FeatureValueType::Float64,
+                value_type: ValueType::Float64,
             },
         )
         .await
@@ -1102,7 +1140,7 @@ mod tests {
             &db.pool,
             CreateGroupOpt {
                 entity_id,
-                category: GroupCategory::Batch,
+                category: Category::Batch,
                 snapshot_interval: None,
                 name: "name".to_owned(),
                 description: "description".to_owned(),
@@ -1117,7 +1155,7 @@ mod tests {
                 group_id,
                 feature_name: "feature_nam".to_owned(),
                 description: "description".to_owned(),
-                value_type: FeatureValueType::Float64,
+                value_type: ValueType::Float64,
             },
         )
         .await
@@ -1136,7 +1174,7 @@ mod tests {
             f.id == feature_id
                 && f.group_id == group_id
                 && f.description == "new_description"
-                && f.value_type == FeatureValueType::Float64
+                && f.value_type == ValueType::Float64
         }));
     }
 
@@ -1158,7 +1196,7 @@ mod tests {
             &db.pool,
             CreateGroupOpt {
                 entity_id,
-                category: GroupCategory::Batch,
+                category: Category::Batch,
                 snapshot_interval: None,
                 name: "name".to_owned(),
                 description: "description".to_owned(),
@@ -1167,7 +1205,9 @@ mod tests {
         .await
         .unwrap();
 
-        let features = super::list_feature(&db.pool, ListOpt::All).await.unwrap();
+        let features = super::list_feature2(&db.pool, ListFeatureOpt::EntityIDs(vec![1]))
+            .await
+            .unwrap();
         assert_eq!(features.len(), 0);
 
         assert!(super::create_feature(
@@ -1176,13 +1216,15 @@ mod tests {
                 group_id,
                 feature_name: "feature_name".to_owned(),
                 description: "description".to_owned(),
-                value_type: FeatureValueType::Float64,
+                value_type: ValueType::Float64,
             }
         )
         .await
         .is_ok());
 
-        let features = super::list_feature(&db.pool, ListOpt::All).await.unwrap();
+        let features = super::list_feature2(&db.pool, ListFeatureOpt::EntityIDs(vec![1]))
+            .await
+            .unwrap();
         assert_eq!(features.len(), 1);
 
         assert!(super::create_feature(
@@ -1191,26 +1233,28 @@ mod tests {
                 group_id,
                 feature_name: "feature_name2".to_owned(),
                 description: "description".to_owned(),
-                value_type: FeatureValueType::Float64,
+                value_type: ValueType::Float64,
             }
         )
         .await
         .is_ok());
 
-        let features = super::list_feature(&db.pool, ListOpt::All).await.unwrap();
-        assert_eq!(features.len(), 2);
-
-        let features = super::list_feature(&db.pool, ListOpt::IDs(vec![1, 2, 3]))
+        let features = super::list_feature2(&db.pool, ListFeatureOpt::EntityIDs(vec![1]))
             .await
             .unwrap();
         assert_eq!(features.len(), 2);
 
-        let features = super::list_feature(
-            &db.pool,
-            ListOpt::Names(vec![&"feature_name", &"feature_name2", &"feature_name3"]),
-        )
-        .await
-        .unwrap();
+        let features = super::list_feature2(&db.pool, ListFeatureOpt::FeatureIDs(vec![1, 2, 3]))
+            .await
+            .unwrap();
         assert_eq!(features.len(), 2);
+
+        // let features = super::list_feature2(
+        //     &db.pool,
+        //     ListOpt::Names(vec![&"feature_name", &"feature_name2", &"feature_name3"]),
+        // )
+        // .await
+        // .unwrap();
+        // assert_eq!(features.len(), 2);
     }
 }

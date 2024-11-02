@@ -4,14 +4,14 @@ use serde_yaml as yaml;
 use std::collections::HashMap;
 use std::io;
 
-use crate::database::metadata::{ApplyEntity, ApplyFeature, ApplyGroup};
+use crate::database::metadata::{RichEntity, RichFeature, RichGroup};
 use crate::feastore::error::Result;
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct ApplyStage {
-    pub new_entities: Vec<ApplyEntity>,
-    pub new_groups: Vec<ApplyGroup>,
-    pub new_features: Vec<ApplyFeature>,
+    pub new_entities: Vec<RichEntity>,
+    pub new_groups: Vec<RichGroup>,
+    pub new_features: Vec<RichFeature>,
 }
 
 impl ApplyStage {
@@ -39,17 +39,17 @@ impl ApplyStage {
         let mut stage = Self::new();
         match parse_kind(&value) {
             Some("Entity") => {
-                let entity: ApplyEntity = yaml::from_value(value).expect("Unable to parse");
+                let entity: RichEntity = yaml::from_value(value).expect("Unable to parse");
                 stage.from_entity(entity);
                 Ok(stage)
             }
             Some("Group") => {
-                let group: ApplyGroup = yaml::from_value(value).expect("Unable to parse");
+                let group: RichGroup = yaml::from_value(value).expect("Unable to parse");
                 stage.from_group(group);
                 Ok(stage)
             }
             Some("Feature") => {
-                let feature: ApplyFeature = yaml::from_value(value).expect("Unable to parse");
+                let feature: RichFeature = yaml::from_value(value).expect("Unable to parse");
                 stage.from_feature(feature);
                 Ok(stage)
             }
@@ -64,7 +64,7 @@ impl ApplyStage {
         let mut stage = Self::new();
         match parse_items_kind(&value) {
             Some("Entity") => {
-                let mut entities: HashMap<String, Vec<ApplyEntity>> =
+                let mut entities: HashMap<String, Vec<RichEntity>> =
                     yaml::from_value(value).expect("Unable to parse");
 
                 for e in entities.remove(items).unwrap_or_default() {
@@ -72,7 +72,7 @@ impl ApplyStage {
                 }
             }
             Some("Group") => {
-                let mut groups: HashMap<String, Vec<ApplyGroup>> =
+                let mut groups: HashMap<String, Vec<RichGroup>> =
                     yaml::from_value(value).expect("Unable to parse");
 
                 for g in groups.remove(items).unwrap_or_default() {
@@ -80,7 +80,7 @@ impl ApplyStage {
                 }
             }
             Some("Feature") | Some("Features") => {
-                let mut features: HashMap<String, Vec<ApplyFeature>> =
+                let mut features: HashMap<String, Vec<RichFeature>> =
                     yaml::from_value(value).expect("Unable to parse");
 
                 for f in features.remove(items).unwrap_or_default() {
@@ -94,20 +94,21 @@ impl ApplyStage {
         Ok(stage)
     }
 
-    fn from_entity(&mut self, mut entity: ApplyEntity) {
+    fn from_entity(&mut self, mut entity: RichEntity) {
         for group in entity.take_groups().unwrap_or_default() {
             self.from_group(group);
         }
+
         self.new_entities.push(entity);
     }
 
-    fn from_group(&mut self, mut group: ApplyGroup) {
+    fn from_group(&mut self, mut group: RichGroup) {
         self.new_features
             .extend(group.take_features().unwrap_or_default());
         self.new_groups.push(group);
     }
 
-    fn from_feature(&mut self, feature: ApplyFeature) {
+    fn from_feature(&mut self, feature: RichFeature) {
         self.new_features.push(feature);
     }
 
@@ -143,8 +144,8 @@ fn parse_items_kind(value: &yaml::Value) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::metadata::GroupCategory::{Batch, Stream};
-    use crate::database::metadata::{ApplyEntity, ApplyGroup, FeatureValueType};
+    use crate::database::metadata::Category::*;
+    use crate::database::metadata::{RichEntity, RichGroup, ValueType};
 
     #[test]
     fn test_build_apply_stage() {
@@ -185,7 +186,7 @@ description: 'description'
              "#
                 .as_bytes(),
                 want: Ok(ApplyStage {
-                    new_entities: vec![ApplyEntity {
+                    new_entities: vec![RichEntity {
                         name: s("user"),
                         description: s("description"),
                         groups: None,
@@ -235,13 +236,13 @@ value-type: int64
 description: 'description'"#
                     .as_bytes(),
                 want: Ok(ApplyStage {
-                    new_entities: vec![ApplyEntity {
+                    new_entities: vec![RichEntity {
                         name: s("user"),
                         description: s("description"),
                         groups: None,
                     }],
                     new_groups: vec![
-                        ApplyGroup {
+                        RichGroup {
                             kind: Some(s("Group")),
                             name: s("account"),
                             entity_name: Some(s("user")),
@@ -250,7 +251,7 @@ description: 'description'"#
                             snapshot_interval: None,
                             features: None,
                         },
-                        ApplyGroup {
+                        RichGroup {
                             kind: Some(s("Group")),
                             name: s("device"),
                             entity_name: Some(s("user")),
@@ -259,7 +260,7 @@ description: 'description'"#
                             description: s("description"),
                             features: None,
                         },
-                        ApplyGroup {
+                        RichGroup {
                             kind: Some(s("Group")),
                             name: s("user-click"),
                             entity_name: Some(s("user")),
@@ -270,25 +271,25 @@ description: 'description'"#
                         },
                     ],
                     new_features: vec![
-                        ApplyFeature {
+                        RichFeature {
                             kind: Some(s("Feature")),
                             name: s("model"),
                             group_name: Some(s("device")),
-                            value_type: FeatureValueType::StringType,
+                            value_type: ValueType::StringType,
                             description: s("description"),
                         },
-                        ApplyFeature {
+                        RichFeature {
                             kind: Some(s("Feature")),
                             name: s("price"),
                             group_name: Some(s("device")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("description"),
                         },
                     ],
                 }),
             },
             TestCase {
-                description: "comlex group",
+                description: "complex group",
                 r: r#"
 kind: Group
 name: device
@@ -306,7 +307,7 @@ features:
                 .as_bytes(),
                 want: Ok(ApplyStage {
                     new_entities: vec![],
-                    new_groups: vec![ApplyGroup {
+                    new_groups: vec![RichGroup {
                         kind: Some(s("Group")),
                         entity_name: Some(s("user")),
                         name: s("device"),
@@ -316,18 +317,18 @@ features:
                         features: None,
                     }],
                     new_features: vec![
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("model"),
                             group_name: Some(s("device")),
-                            value_type: FeatureValueType::StringType,
+                            value_type: ValueType::StringType,
                             description: s("description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("price"),
                             group_name: Some(s("device")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("description"),
                         },
                     ],
@@ -374,14 +375,14 @@ groups:
             "#
                 .as_bytes(),
                 want: Ok(ApplyStage {
-                    new_entities: vec![ApplyEntity {
+                    new_entities: vec![RichEntity {
                         name: s("user"),
                         description: s("description"),
                         groups: None,
                     }],
                     new_groups: vec![
-                        ApplyGroup {
-                            kind: None,
+                        RichGroup {
+                            kind: Some(s("Group")),
                             name: s("device"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -389,8 +390,8 @@ groups:
                             snapshot_interval: None,
                             features: None,
                         },
-                        ApplyGroup {
-                            kind: None,
+                        RichGroup {
+                            kind: Some(s("Group")),
                             name: s("user"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -398,8 +399,8 @@ groups:
                             snapshot_interval: None,
                             features: None,
                         },
-                        ApplyGroup {
-                            kind: None,
+                        RichGroup {
+                            kind: Some(s("Group")),
                             name: s("user-click"),
                             category: Stream,
                             entity_name: Some(s("user")),
@@ -409,46 +410,46 @@ groups:
                         },
                     ],
                     new_features: vec![
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("model"),
                             group_name: Some(s("device")),
-                            value_type: FeatureValueType::StringType,
+                            value_type: ValueType::StringType,
                             description: s("description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("price"),
                             group_name: Some(s("device")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("age"),
                             group_name: Some(s("user")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("gender"),
                             group_name: Some(s("user")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("last_5_click_posts"),
                             group_name: Some(s("user-click")),
-                            value_type: FeatureValueType::StringType,
+                            value_type: ValueType::StringType,
                             description: s("description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("number_of_user_started_posts"),
                             group_name: Some(s("user-click")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("description"),
                         },
                     ],
@@ -489,39 +490,39 @@ items:
                     new_entities: vec![],
                     new_groups: vec![],
                     new_features: vec![
-                        ApplyFeature {
+                        RichFeature {
                             kind: Some(s("Feature")),
                             name: s("credit_score"),
                             group_name: Some(s("account")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("credit_score description"),
                         },
-                        ApplyFeature {
+                        RichFeature {
                             kind: Some(s("Feature")),
                             name: s("account_age_days"),
                             group_name: Some(s("account")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("account_age_days description"),
                         },
-                        ApplyFeature {
+                        RichFeature {
                             kind: Some(s("Feature")),
                             name: s("has_2fa_installed"),
                             group_name: Some(s("account")),
-                            value_type: FeatureValueType::Bool,
+                            value_type: ValueType::Bool,
                             description: s("has_2fa_installed description"),
                         },
-                        ApplyFeature {
+                        RichFeature {
                             kind: Some(s("Feature")),
                             name: s("transaction_count_7d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("transaction_count_7d description"),
                         },
-                        ApplyFeature {
+                        RichFeature {
                             kind: Some(s("Feature")),
                             name: s("transaction_count_30d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("transaction_count_30d description"),
                         },
                     ],
@@ -563,7 +564,7 @@ items:
                 want: Ok(ApplyStage {
                     new_entities: vec![],
                     new_groups: vec![
-                        ApplyGroup {
+                        RichGroup {
                             kind: Some(s("Group")),
                             name: s("account"),
                             category: Batch,
@@ -572,7 +573,7 @@ items:
                             snapshot_interval: None,
                             features: None,
                         },
-                        ApplyGroup {
+                        RichGroup {
                             kind: Some(s("Group")),
                             name: s("transaction_stats"),
                             category: Batch,
@@ -583,39 +584,39 @@ items:
                         },
                     ],
                     new_features: vec![
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("credit_score"),
                             group_name: Some(s("account")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("credit_score description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("account_age_days"),
                             group_name: Some(s("account")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("account_age_days description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("has_2fa_installed"),
                             group_name: Some(s("account")),
-                            value_type: FeatureValueType::Bool,
+                            value_type: ValueType::Bool,
                             description: s("has_2fa_installed description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("transaction_count_7d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("transaction_count_7d description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("transaction_count_30d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("transaction_count_30d description"),
                         },
                     ],
@@ -670,20 +671,20 @@ items:
                 .as_bytes(),
                 want: Ok(ApplyStage {
                     new_entities: vec![
-                        ApplyEntity {
+                        RichEntity {
                             name: s("user"),
                             description: s("user ID"),
                             groups: None,
                         },
-                        ApplyEntity {
+                        RichEntity {
                             name: s("device"),
                             description: s("device info"),
                             groups: None,
                         },
                     ],
                     new_groups: vec![
-                        ApplyGroup {
-                            kind: None,
+                        RichGroup {
+                            kind: Some(s("Group")),
                             name: s("account"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -691,8 +692,8 @@ items:
                             snapshot_interval: None,
                             features: None,
                         },
-                        ApplyGroup {
-                            kind: None,
+                        RichGroup {
+                            kind: Some(s("Group")),
                             name: s("transaction_stats"),
                             category: Batch,
                             entity_name: Some(s("user")),
@@ -700,8 +701,8 @@ items:
                             snapshot_interval: None,
                             features: None,
                         },
-                        ApplyGroup {
-                            kind: None,
+                        RichGroup {
+                            kind: Some(s("Group")),
                             name: s("phone"),
                             category: Batch,
                             entity_name: Some(s("device")),
@@ -711,53 +712,53 @@ items:
                         },
                     ],
                     new_features: vec![
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("credit_score"),
                             group_name: Some(s("account")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("credit_score description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("account_age_days"),
                             group_name: Some(s("account")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("account_age_days description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("has_2fa_installed"),
                             group_name: Some(s("account")),
-                            value_type: FeatureValueType::Bool,
+                            value_type: ValueType::Bool,
                             description: s("has_2fa_installed description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("transaction_count_7d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("transaction_count_7d description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("transaction_count_30d"),
                             group_name: Some(s("transaction_stats")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("transaction_count_30d description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("model"),
                             group_name: Some(s("phone")),
-                            value_type: FeatureValueType::StringType,
+                            value_type: ValueType::StringType,
                             description: s("model description"),
                         },
-                        ApplyFeature {
-                            kind: None,
+                        RichFeature {
+                            kind: Some(s("Feature")),
                             name: s("price"),
                             group_name: Some(s("phone")),
-                            value_type: FeatureValueType::Int64,
+                            value_type: ValueType::Int64,
                             description: s("price description"),
                         },
                     ],

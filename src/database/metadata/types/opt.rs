@@ -22,3 +22,16 @@ impl<'a> From<Vec<&'a str>> for ListOpt<'a> {
         ListOpt::Names(names)
     }
 }
+
+#[derive(Debug)]
+pub enum ListGroupOpt {
+    EntityIDs(Vec<i64>),
+    GroupIDs(Vec<i64>),
+}
+
+#[derive(Debug)]
+pub enum ListFeatureOpt {
+    EntityIDs(Vec<i64>),
+    GroupIDs(Vec<i64>),
+    FeatureIDs(Vec<i64>),
+}

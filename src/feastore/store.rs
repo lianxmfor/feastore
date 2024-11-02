@@ -1,7 +1,9 @@
 use crate::database::metadata::{
-    CreateFeatureOpt, CreateGroupOpt, DataStore, Entity, Feature, GetOpt, Group, ListOpt,
+    CreateFeatureOpt, CreateGroupOpt, DataStore, Entity, Feature, GetOpt, Group, ListFeatureOpt,
+    ListOpt, RichEntity, RichFeature, RichGroup,
 };
 use crate::feastore::{apply, FeatureStoreConfig, Result};
+use crate::Error;
 
 pub struct Store {
     metadata: DataStore,
@@ -84,26 +86,49 @@ impl Store {
         self.metadata.list_group(opt).await.map_err(|e| e.into())
     }
 
-    pub async fn list_feature<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<Feature>> {
-        self.metadata.list_feature(opt).await.map_err(|e| e.into())
+    pub async fn list_rich_entity<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<RichEntity>> {
+        self.metadata
+            .list_rich_entity(opt)
+            .await
+            .map_err(|e| e.into())
     }
 
-    pub async fn list_entity_with_full_information<'a>(
-        &self,
-        opt: ListOpt<'a>,
-    ) -> Result<Vec<Entity>> {
+    pub async fn list_rich_group<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<RichGroup>> {
         self.metadata
-            .list_entities_with_full_information(opt)
+            .list_rich_group(opt)
             .await
             .map_err(|e| e.into())
     }
-    pub async fn list_group_with_full_information<'a>(
-        &self,
-        opt: ListOpt<'a>,
-    ) -> Result<Vec<Group>> {
-        self.metadata
-            .list_group_with_full_information(opt)
-            .await
-            .map_err(|e| e.into())
+
+    pub async fn list_rich_feature(&self, feature_names: &[String]) -> Result<Vec<RichFeature>> {
+        Ok(self
+            .list_feature2(feature_names)
+            .await?
+            .into_iter()
+            .map(|f| RichFeature::from2(f))
+            .collect())
     }
+
+    pub async fn list_feature2(&self, feature_names: &[String]) -> Result<Vec<Feature>> {
+        let features = self
+            .metadata
+            .list_feature2(ListFeatureOpt::EntityIDs(vec![1]))
+            .await
+            .map_err(|e| Error::from(e))?;
+
+        let features = if feature_names.is_empty() {
+            features
+        } else {
+            features
+                .into_iter()
+                .filter(|f| is_contains(&f.full_name(), feature_names))
+                .collect()
+        };
+
+        Ok(features)
+    }
+}
+
+fn is_contains(name: &str, names: &[String]) -> bool {
+    names.iter().any(|n| n == name)
 }

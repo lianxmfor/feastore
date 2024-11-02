@@ -3,7 +3,7 @@ use csv::Writer;
 use prettytable::Table;
 use serde::Serialize;
 
-use feastore::database::metadata::{ApplyEntity, ApplyFeature, ApplyGroup, ListOpt};
+use feastore::database::metadata::ListOpt;
 use feastore::{Result, Store};
 
 #[derive(Debug, Args)]
@@ -49,24 +49,16 @@ impl Command {
 
     async fn get_entity(&self, store: Store) -> Result<()> {
         let opt = build_opt(&self.names);
-        if let Format::Yaml = self.output_format {
-            let entities = store
-                .list_entity_with_full_information(opt)
-                .await?
-                .into_iter()
-                .map(|e| ApplyEntity::from(e))
-                .collect();
-
-            output(entities, &self.output_format);
-        } else {
-            let entities = store
-                .list_entity(opt)
-                .await
-                .expect("failed to get entities");
-
-            output(entities, &self.output_format);
+        match self.output_format {
+            Format::Yaml => {
+                let entities = store.list_rich_entity(opt).await?;
+                output(entities, &Format::Yaml);
+            }
+            _ => {
+                let entities = store.list_entity(opt).await?;
+                output(entities, &self.output_format);
+            }
         }
-
         Ok(())
     }
 
@@ -74,18 +66,11 @@ impl Command {
         let opt = build_opt(&self.names);
         match self.output_format {
             Format::Yaml => {
-                let groups = store
-                    .list_group_with_full_information(opt)
-                    .await?
-                    .into_iter()
-                    .map(|g| ApplyGroup::from(g, true))
-                    .collect();
-
+                let groups = store.list_rich_group(opt).await?;
                 output(groups, &self.output_format);
             }
             _ => {
                 let groups = store.list_group(opt).await?;
-
                 output(groups, &self.output_format);
             }
         }
@@ -93,24 +78,13 @@ impl Command {
     }
 
     async fn get_feature(&self, store: Store) -> Result<()> {
-        let opt = build_opt(&self.names);
         match self.output_format {
             Format::Yaml => {
-                let features = store
-                    .list_feature(opt)
-                    .await?
-                    .into_iter()
-                    .map(|f| ApplyFeature::from(f, true))
-                    .collect();
-
+                let features = store.list_rich_feature(&self.names).await?;
                 output(features, &self.output_format);
             }
             _ => {
-                let features = store
-                    .list_feature(opt)
-                    .await
-                    .expect("failed to get features");
-
+                let features = store.list_feature2(&self.names).await?;
                 output(features, &self.output_format);
             }
         }
