@@ -1,6 +1,8 @@
+use anyhow::{Error, Result};
 use clap::{Args, Subcommand};
+
 use feastore::database::metadata::{Category, CreateFeatureOpt, CreateGroupOpt, GetOpt, ValueType};
-use feastore::{Result, Store};
+use feastore::Store;
 
 #[derive(Args)]
 pub struct RegisterCommand {
@@ -50,7 +52,7 @@ struct RegisterFeature {
 }
 
 impl RegisterCommand {
-    pub async fn run(self, store: Store) -> Result<()> {
+    pub async fn run(self, store: Store) -> Result<(), Error> {
         match self.cmds {
             SubCmd::Entity(entity) => register_entity(entity, store).await,
             SubCmd::Group(group) => register_group(group, store).await,
@@ -59,14 +61,15 @@ impl RegisterCommand {
     }
 }
 
-async fn register_entity(entity: RegisterEntity, store: Store) -> Result<()> {
+async fn register_entity(entity: RegisterEntity, store: Store) -> Result<(), Error> {
     store
         .create_entity(&entity.name, &entity.description)
         .await
         .map(|_| ())
+        .map_err(|e| e.into())
 }
 
-async fn register_group(group: RegisterGroup, store: Store) -> Result<()> {
+async fn register_group(group: RegisterGroup, store: Store) -> Result<(), Error> {
     let entity_id = if let Ok(Some(entity)) = store.get_entity(GetOpt::Name(&group.entity)).await {
         entity.id
     } else {
@@ -81,10 +84,14 @@ async fn register_group(group: RegisterGroup, store: Store) -> Result<()> {
         description: group.description,
     };
 
-    store.create_group(opt).await.map(|_| ())
+    store
+        .create_group(opt)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.into())
 }
 
-async fn register_feature(feature: RegisterFeature, store: Store) -> Result<()> {
+async fn register_feature(feature: RegisterFeature, store: Store) -> Result<(), Error> {
     let group_id = if let Ok(Some(group)) = store.get_group(GetOpt::Name(&feature.group)).await {
         group.id
     } else {
@@ -98,5 +105,9 @@ async fn register_feature(feature: RegisterFeature, store: Store) -> Result<()> 
         description: feature.description,
     };
 
-    store.create_feature(opt).await.map(|_| ())
+    store
+        .create_feature(opt)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.into())
 }

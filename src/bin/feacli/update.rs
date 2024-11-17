@@ -1,7 +1,9 @@
 use clap::{Args, Subcommand};
 
+use anyhow::Result;
+
 use feastore::database::metadata::GetOpt;
-use feastore::{Result, Store};
+use feastore::Store;
 
 #[derive(Args)]
 pub struct UpdateCommand {
@@ -54,7 +56,10 @@ async fn update_entity(entity: UpdateEntity, store: Store) -> Result<()> {
         return Ok(());
     };
 
-    store.update_entity(entity_id, &entity.description).await
+    store
+        .update_entity(entity_id, &entity.description)
+        .await
+        .map_err(|e| e.into())
 }
 
 async fn update_group(group: UpdateGroup, store: Store) -> Result<()> {
@@ -64,7 +69,10 @@ async fn update_group(group: UpdateGroup, store: Store) -> Result<()> {
         return Ok(());
     };
 
-    store.update_group(group_id, &group.description).await
+    store
+        .update_group(group_id, &group.description)
+        .await
+        .map_err(|e| e.into())
 }
 
 async fn update_feature(feature: UpdateFeature, store: Store) -> Result<()> {
@@ -75,5 +83,8 @@ async fn update_feature(feature: UpdateFeature, store: Store) -> Result<()> {
         return Ok(());
     };
 
-    store.update_feature(feature_id, &feature.description).await
+    store
+        .update_feature(feature_id, &feature.description)
+        .await
+        .map_err(|e| e.into())
 }

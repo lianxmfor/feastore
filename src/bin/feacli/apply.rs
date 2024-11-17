@@ -1,7 +1,8 @@
 use std::fs;
 
+use anyhow::{Context, Result};
 use clap::Args;
-use feastore::{Result, Store};
+use feastore::Store;
 
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -16,8 +17,8 @@ impl ApplyCmd {
         let reader = fs::OpenOptions::new()
             .read(true)
             .open(&self.filepath)
-            .unwrap();
+            .context("config file open failed.")?;
 
-        store.apply(reader).await
+        store.apply(reader).await.map_err(|err| err.into())
     }
 }

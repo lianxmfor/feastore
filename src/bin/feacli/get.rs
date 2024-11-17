@@ -1,10 +1,11 @@
+use anyhow::Result;
 use clap::{Args, Subcommand};
 use csv::Writer;
 use prettytable::Table;
 use serde::Serialize;
 
 use feastore::database::metadata::ListOpt;
-use feastore::{Result, Store};
+use feastore::Store;
 
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -49,14 +50,14 @@ impl Command {
 
     async fn get_entity(&self, store: Store) -> Result<()> {
         let opt = build_opt(&self.names);
-        match self.output_format {
+        match &self.output_format {
             Format::Yaml => {
                 let entities = store.list_rich_entity(opt).await?;
                 output(entities, &Format::Yaml);
             }
-            _ => {
+            format => {
                 let entities = store.list_entity(opt).await?;
-                output(entities, &self.output_format);
+                output(entities, format);
             }
         }
         Ok(())
@@ -64,28 +65,28 @@ impl Command {
 
     async fn get_group(&self, store: Store) -> Result<()> {
         let opt = build_opt(&self.names);
-        match self.output_format {
+        match &self.output_format {
             Format::Yaml => {
                 let groups = store.list_rich_group(opt).await?;
-                output(groups, &self.output_format);
+                output(groups, &Format::Yaml);
             }
-            _ => {
+            format => {
                 let groups = store.list_group(opt).await?;
-                output(groups, &self.output_format);
+                output(groups, format);
             }
         }
         Ok(())
     }
 
     async fn get_feature(&self, store: Store) -> Result<()> {
-        match self.output_format {
+        match &self.output_format {
             Format::Yaml => {
                 let features = store.list_rich_feature(&self.names).await?;
-                output(features, &self.output_format);
+                output(features, &Format::Yaml);
             }
-            _ => {
+            format => {
                 let features = store.list_feature2(&self.names).await?;
-                output(features, &self.output_format);
+                output(features, format);
             }
         }
         Ok(())
