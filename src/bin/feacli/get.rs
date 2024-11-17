@@ -85,7 +85,7 @@ impl Command {
                 output(features, &Format::Yaml);
             }
             format => {
-                let features = store.list_feature2(&self.names).await?;
+                let features = store.list_feature(&self.names).await?;
                 output(features, format);
             }
         }

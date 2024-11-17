@@ -86,7 +86,7 @@ impl DB {
     pub(crate) async fn list_rich_group<'a>(&self, opt: ListOpt<'a>) -> Result<Vec<RichGroup>> {
         let groups = self.list_group(opt).await?;
         let features = self
-            .list_feature2(ListFeatureOpt::EntityIDs(vec![1])) // FIXME
+            .list_feature(ListFeatureOpt::EntityIDs(vec![1])) // FIXME
             .await?;
 
         let mut res = vec![];
@@ -199,7 +199,7 @@ impl DB {
         Ok(groups)
     }
 
-    pub(crate) async fn list_feature2(&self, opt: ListFeatureOpt) -> Result<Vec<Feature>> {
+    pub(crate) async fn list_feature(&self, opt: ListFeatureOpt) -> Result<Vec<Feature>> {
         let mut features = list_feature2(&self.pool, opt).await?;
         let ids = features.iter().map(|f| f.group_id).collect();
         let groups = self.list_group2(ListGroupOpt::GroupIDs(ids)).await?;

@@ -102,17 +102,17 @@ impl Store {
 
     pub async fn list_rich_feature(&self, feature_names: &[String]) -> Result<Vec<RichFeature>> {
         Ok(self
-            .list_feature2(feature_names)
+            .list_feature(feature_names)
             .await?
             .into_iter()
             .map(|f| RichFeature::from2(f))
             .collect())
     }
 
-    pub async fn list_feature2(&self, feature_names: &[String]) -> Result<Vec<Feature>> {
+    pub async fn list_feature(&self, feature_names: &[String]) -> Result<Vec<Feature>> {
         let features = self
             .metadata
-            .list_feature2(ListFeatureOpt::EntityIDs(vec![1]))
+            .list_feature(ListFeatureOpt::EntityIDs(vec![1]))
             .await
             .map_err(|e| Error::from(e))?;
 
