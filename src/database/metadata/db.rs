@@ -113,9 +113,9 @@ impl DataStore {
         }
     }
 
-    pub(crate) async fn list_feature2(&self, opt: ListFeatureOpt) -> Result<Vec<Feature>> {
+    pub(crate) async fn list_feature(&self, opt: ListFeatureOpt) -> Result<Vec<Feature>> {
         match self {
-            Self::Sqlite(db) => db.list_feature2(opt).await,
+            Self::Sqlite(db) => db.list_feature(opt).await,
         }
     }
 }
